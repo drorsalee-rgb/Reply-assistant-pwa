@@ -108,20 +108,25 @@
 
   .context{
     display:flex;
-    align-items:center;
-    gap:10px;
+    flex-direction:column;
+    gap:6px;
     font-family:'JetBrains Mono',monospace;
     font-size:12px;
     color:#9fb0a6;
-    padding:0 4px;
+    padding:10px 12px;
+    max-height:110px;
+    overflow-y:auto;
+    background:rgba(255,255,255,0.04);
+    border-radius:10px;
+    border:1px solid rgba(255,255,255,0.06);
   }
+  .context .src-row{ display:flex; align-items:center; gap:8px; }
   .context .dot{width:6px;height:6px;border-radius:50%;background:var(--gold);flex:none;}
   .context .src{color:#cdd9d1;}
   .context .snippet{
-    overflow:hidden;
-    text-overflow:ellipsis;
-    white-space:nowrap;
-    opacity:0.75;
+    white-space:pre-line;
+    opacity:0.85;
+    line-height:1.6;
   }
 
   .card-wrap{ position:relative; }
@@ -407,7 +412,7 @@
 
   <div class="actions">
     <button class="btn-accept" id="acceptBtn" disabled>
-      <span id="acceptLabel">העתק/י תגובה</span>
+      <span id="acceptLabel">בחר</span>
     </button>
     <button class="btn-retry" id="retryBtn" disabled>
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -473,19 +478,24 @@ const params = new URLSearchParams(window.location.search);
 const token = params.get('token') || 'demo-token';
 
 const MOCK_CONTEXT = {
-  source: 'linkedin.com',
-  snippet: '"מתרגשים לבשר שסגרנו סיבוב גיוס Series A — תודה גדולה לצוות..."',
+  source: 'x.com/askdani__real/status/2066019756168118524?s=20',
+  snippet: 'התחילה עונת ה"אם תצביעו לשמאל אז שערי הגיהנום ייפתחו"\n\nאז כדאי להיזכר שבבחירות הקודמות הם הפחידו אותנו שאם נצביע לשמאל אז מחבלים על טנדרים יסעו חופשי ברחבי ישראל.',
   // The real, canonical URL of the post. Your backend should return this
   // alongside the suggestion — it's what triggers the OS-level handoff to
   // the native app (Universal Links / App Links) when one is installed.
-  postUrl: 'https://www.linkedin.com/posts/example-series-a-announcement'
+  postUrl: 'https://x.com/askdani__real/status/2066019756168118524?s=20'
 };
 
 const SUGGESTIONS_BY_TONE = {
   cynical:   ["מזל טוב! עוד קצת ותתחילו לדבר על \u05D4'שינוי העולם' כמו כולם.", "Series A, איזה חידוש. בהצלחה עם ה-burn rate החדש."],
   emotional: ["כל הכבוד! ניכר כמה עבודה ואהבה הושקעו כאן — מתרגש/ת בשבילכם.", "קראתי את זה ופשוט שמח/ה. מגיע לכם כל מילה טובה."],
   formal:    ["ברכות חמות על ההשקעה המשמעותית והישג זה לחברה ולצוות.", "מבקש/ת להעביר ברכות על ההצלחה. התמדה זו ראויה להערכה."],
-  aggressive:["תותחים! קדימה לשבור את השוק 🚀", "סיבוב גיוס? זה רק ההתחלה. קדימה לכבוש."]
+  aggressive:[
+    "הפחדות ריקות מתוכן של מי שהביאו עלינו את האסון! בושה של ממשלה.",
+    "כל מה שהזהרתם מפניו קרה בגללכם. אתם ההפקרה האמיתית!",
+    "איפה הביטחון שהבטחתם? קיבלנו 7 באוקטובר ועכשיו אתם בורחים מאחריות.",
+    "לפרק פינת זיכרון כדי לא לראות את המחדל? אתם מנותקים מהמציאות ומהעם."
+  ]
 };
 
 let suggestionIndex = 0;
@@ -579,8 +589,7 @@ function renderDots(active, total){
 
 function renderContext(ctx){
   els.context.innerHTML = `
-    <span class="dot"></span>
-    <span class="src">${ctx.source}</span>
+    <span class="src-row"><span class="dot"></span><span class="src">${ctx.source}</span></span>
     <span class="snippet">${ctx.snippet}</span>
   `;
 }
@@ -597,7 +606,7 @@ async function loadSuggestion(index, animate){
   els.retryBtn.disabled = true;
   els.retryBtn.classList.add('spinning');
   els.acceptBtn.classList.remove('done');
-  els.acceptLabel.textContent = 'העתק/י תגובה';
+  els.acceptLabel.textContent = 'בחר';
   els.hint.textContent = 'הדבק/י אותה כתגובה לפוסט.';
 
   if(animate){
@@ -608,11 +617,11 @@ async function loadSuggestion(index, animate){
   }
 
   const text = await fetchSuggestion(currentStyle.tone, index);
-  const pool = SUGGESTIONS_BY_TONE[currentStyle.tone] || SUGGESTIONS_BY_TONE.emotional;
+  const options = SUGGESTIONS_BY_TONE[currentStyle.tone] || SUGGESTIONS_BY_TONE.emotional;
 
   els.quoteText.textContent = text;
   els.forUser.textContent = `סגנון: ${TONE_LABEL[currentStyle.tone]}`;
-  renderDots(index % pool.length, pool.length);
+  renderDots(index % options.length, options.length);
 
   els.acceptBtn.disabled = false;
   els.retryBtn.disabled = false;
@@ -699,11 +708,38 @@ els.panelSaveBtn.addEventListener('click', async () => {
   await refreshUI(true);
 });
 
-/* ---- copy / retry ---- */
+/* ---- copy / retry / navigation ---- */
 
-els.retryBtn.addEventListener('click', async () => {
-  suggestionIndex += 1;
+function pool(){
+  return SUGGESTIONS_BY_TONE[currentStyle.tone] || SUGGESTIONS_BY_TONE.emotional;
+}
+
+async function navigate(direction){
+  if(!currentStyle || els.retryBtn.disabled) return;
+  const len = pool().length;
+  suggestionIndex = ((suggestionIndex + direction) % len + len) % len;
   await loadSuggestion(suggestionIndex, true);
+}
+
+els.retryBtn.addEventListener('click', () => navigate(1));
+
+document.addEventListener('keydown', (e) => {
+  if(els.panel.classList.contains('open')) return;
+  if(e.key === 'ArrowRight') navigate(1);
+  else if(e.key === 'ArrowLeft') navigate(-1);
+});
+
+let touchStartX = null;
+els.card.addEventListener('touchstart', (e) => {
+  touchStartX = e.touches[0].clientX;
+}, { passive: true });
+els.card.addEventListener('touchend', (e) => {
+  if(touchStartX === null) return;
+  const dx = e.changedTouches[0].clientX - touchStartX;
+  touchStartX = null;
+  const SWIPE_THRESHOLD = 40;
+  if(dx <= -SWIPE_THRESHOLD) navigate(1);
+  else if(dx >= SWIPE_THRESHOLD) navigate(-1);
 });
 
 els.acceptBtn.addEventListener('click', async () => {
