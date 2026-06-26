@@ -227,13 +227,6 @@
   .btn-retry.spinning svg{ transform:rotate(180deg); }
   .btn-retry:disabled{ opacity:0.3; pointer-events:none; }
 
-  .hint{
-    text-align:center;
-    font-size:12px;
-    color:#7c8c82;
-    padding:0 12px;
-  }
-
   .skeleton{
     background:linear-gradient(90deg, var(--paper-edge) 25%, #f5f1e7 37%, var(--paper-edge) 63%);
     background-size:400% 100%;
@@ -418,8 +411,6 @@
       <span id="retryLabel">הצעה אחרת</span>
     </button>
   </div>
-
-  <p class="hint" id="hint">הדבק/י אותה כתגובה לפוסט.</p>
 </div>
 
 <!-- full-screen style panel -->
@@ -531,7 +522,6 @@ const els = {
   acceptBtn: document.getElementById('acceptBtn'),
   acceptLabel: document.getElementById('acceptLabel'),
   retryBtn: document.getElementById('retryBtn'),
-  hint: document.getElementById('hint'),
   panel: document.getElementById('panel'),
   backBtn: document.getElementById('backBtn'),
   panelSaveBtn: document.getElementById('panelSaveBtn'),
@@ -568,7 +558,6 @@ function setLocked(locked){
     els.quoteText.textContent = 'בחר/י סגנון למעלה כדי לראות כאן הצעת תגובה.';
     els.forUser.textContent = '—';
     els.optionDots.innerHTML = '';
-    els.hint.textContent = 'עדיין לא נבחר סגנון.';
   } else {
     els.quoteText.classList.remove('placeholder');
   }
@@ -600,7 +589,6 @@ async function loadSuggestion(index, animate){
   els.retryBtn.classList.add('spinning');
   els.acceptBtn.classList.remove('done');
   els.acceptLabel.textContent = 'בחר';
-  els.hint.textContent = 'הדבק/י אותה כתגובה לפוסט.';
 
   if(animate){
     els.quoteText.innerHTML = `<span class="skeleton" style="width:100%;display:block;margin-bottom:8px;"></span><span class="skeleton" style="width:80%;display:block;"></span>`;
@@ -748,7 +736,6 @@ els.acceptBtn.addEventListener('click', async () => {
   }
   els.acceptBtn.classList.add('done');
   els.acceptLabel.textContent = 'הועתק ✓';
-  els.hint.textContent = 'הועתק ללוח — פותח את הפוסט המקורי…';
 
   // Navigate to the real post URL right away, in the same user gesture.
   // No device/app detection needed: if the platform's app is installed and
