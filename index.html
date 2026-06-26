@@ -11,20 +11,26 @@
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500&family=Noto+Sans+Hebrew:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
   :root{
-    --bg:#17261f;
-    --bg-soft:#1e3127;
-    --paper:#faf7f0;
+    --bg:#0a1e25;
+    --bg-soft:#123642;
+    --paper:#eaf6f8;
     --paper-edge:#ece6d8;
     --ink:#1c2620;
     --ink-soft:#5b6660;
-    --gold:#d9a14b;
-    --gold-deep:#b9822f;
+    --gold:#28c2e0;
+    --gold-deep:#1c9db8;
     --good:#5f9c7d;
     --warn:#d97a4b;
     --warn-bg:#3a2a1c;
-    --panel:#0e1410;
-    --panel-border:#33453c;
-    --field-bg:#16201a;
+    --panel:#0c2027;
+    --panel-border:#1f4750;
+    --field-bg:#0e2730;
+    --card-bg:#123642;
+    --card-header-bg:#0c2730;
+    --card-border:#1f5b66;
+    --accent:#28c2e0;
+    --accent-deep:#1c9db8;
+    --accent-ink:#06222b;
   }
   *{box-sizing:border-box;}
   html,body{margin:0;padding:0;}
@@ -129,61 +135,66 @@
   .card-wrap{ position:relative; }
   .card{
     position:relative;
-    background:var(--paper);
-    color:var(--ink);
+    background:var(--card-bg);
+    color:var(--paper);
     border-radius:18px;
-    padding:30px 26px 26px;
+    border:1.5px solid var(--card-border);
+    overflow:hidden;
     min-height:180px;
-    box-shadow:0 18px 40px -12px rgba(0,0,0,0.45);
+    box-shadow:0 18px 40px -12px rgba(0,0,0,0.55);
     transition:transform .35s cubic-bezier(.2,.8,.2,1), opacity .3s ease, filter .25s ease;
   }
-  .card.locked{ filter:grayscale(0.5) brightness(0.92); }
-  .perf{
+  .card.locked{ filter:grayscale(0.4) brightness(0.85); }
+
+  .card-header{
     display:flex;
+    align-items:center;
     justify-content:space-between;
-    padding:0 6px 16px;
-    margin:-4px -6px 4px;
+    gap:10px;
+    padding:12px 14px;
+    background:var(--card-header-bg);
+    border-bottom:1px solid var(--card-border);
   }
-  .perf span{
-    width:6px;height:6px;border-radius:50%;
-    background:var(--paper-edge);
+  .card-title{
+    flex:1;
+    text-align:center;
+    font-size:15px;
+    font-weight:700;
+    color:var(--paper);
   }
+  .nav-arrow{
+    flex:none;
+    width:34px;height:34px;
+    border-radius:50%;
+    background:rgba(40,194,224,0.12);
+    border:1.5px solid var(--accent);
+    color:var(--accent);
+    display:flex;align-items:center;justify-content:center;
+    transition:background .15s ease, transform .15s ease;
+  }
+  .nav-arrow svg{ width:16px;height:16px; }
+  .nav-arrow:active{ transform:scale(0.9); background:rgba(40,194,224,0.25); }
+  .nav-arrow:disabled{ opacity:0.3; pointer-events:none; }
+
   .quote-text{
-    font-family:'Noto Sans Hebrew','Fraunces',serif;
-    font-size:20px;
-    line-height:1.6;
+    font-family:'Noto Sans Hebrew','Inter',sans-serif;
+    font-size:18px;
+    line-height:1.7;
     font-weight:600;
     margin:0;
     min-height:60px;
+    padding:22px 20px;
+    color:#eaf6f8;
   }
   .quote-text.placeholder{
-    color:var(--ink-soft);
+    color:#7ea3aa;
     font-style:italic;
-    font-size:16px;
+    font-size:15px;
     font-weight:500;
   }
 
   .card.swap-out{ transform:translateX(14px) scale(.985); opacity:0; }
   .card.swap-in{ transform:translateX(-14px) scale(.985); opacity:0; }
-
-  .meta-row{
-    display:flex;
-    align-items:center;
-    justify-content:space-between;
-    margin-top:18px;
-    padding-top:14px;
-    border-top:1px dashed var(--paper-edge);
-  }
-  .meta-row .for-user{
-    font-family:'JetBrains Mono',monospace;
-    font-size:11px;
-    color:var(--ink-soft);
-  }
-  .option-dots{ display:flex; gap:5px; }
-  .option-dots span{
-    width:5px;height:5px;border-radius:50%;background:var(--paper-edge);
-  }
-  .option-dots span.active{ background:var(--gold-deep); }
 
   .actions{ display:flex; flex-direction:column; gap:10px; }
   button{
@@ -193,12 +204,12 @@
     -webkit-appearance:none;
   }
   .btn-accept{
-    background:var(--gold);
-    color:#231708;
+    background:var(--accent);
+    color:var(--accent-ink);
     font-weight:700;
-    font-size:16px;
-    padding:16px 20px;
-    border-radius:14px;
+    font-size:17px;
+    padding:17px 20px;
+    border-radius:16px;
     display:flex;
     align-items:center;
     justify-content:center;
@@ -207,28 +218,10 @@
   }
   .btn-accept:active{ transform:scale(0.97); }
   .btn-accept.done{ background:var(--good); color:#0e1f15; }
-  .btn-accept:disabled{ background:#5b6660; color:#a9b3ad; pointer-events:none; }
-
-  .btn-retry{
-    background:transparent;
-    color:#cdd9d1;
-    font-size:14px;
-    font-weight:500;
-    padding:10px 8px;
-    border-radius:10px;
-    display:flex;
-    align-items:center;
-    justify-content:center;
-    gap:6px;
-    opacity:0.85;
-  }
-  .btn-retry:active{ opacity:0.6; }
-  .btn-retry svg{ width:15px;height:15px; transition:transform .4s ease; }
-  .btn-retry.spinning svg{ transform:rotate(180deg); }
-  .btn-retry:disabled{ opacity:0.3; pointer-events:none; }
+  .btn-accept:disabled{ background:#3a4d52; color:#7c9499; pointer-events:none; }
 
   .skeleton{
-    background:linear-gradient(90deg, var(--paper-edge) 25%, #f5f1e7 37%, var(--paper-edge) 63%);
+    background:linear-gradient(90deg, rgba(255,255,255,0.08) 25%, rgba(255,255,255,0.18) 37%, rgba(255,255,255,0.08) 63%);
     background-size:400% 100%;
     animation:shimmer 1.4s ease infinite;
     border-radius:6px;
@@ -384,31 +377,25 @@
 
   <div class="card-wrap">
     <div class="card" id="card">
-      <div class="perf">
-        <span></span><span></span><span></span><span></span><span></span>
-        <span></span><span></span><span></span><span></span><span></span>
+      <div class="card-header">
+        <button class="nav-arrow" id="prevBtn" aria-label="הצעה קודמת" disabled>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
+        </button>
+        <span class="card-title" id="forUser">מכין/ה הצעה…</span>
+        <button class="nav-arrow" id="nextBtn" aria-label="הצעה הבאה" disabled>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+        </button>
       </div>
       <p class="quote-text" id="quoteText">
         <span class="skeleton" style="width:100%;display:block;margin-bottom:8px;"></span>
         <span class="skeleton" style="width:80%;display:block;"></span>
       </p>
-      <div class="meta-row">
-        <span class="for-user" id="forUser">מכין/ה הצעה…</span>
-        <div class="option-dots" id="optionDots"></div>
-      </div>
     </div>
   </div>
 
   <div class="actions">
     <button class="btn-accept" id="acceptBtn" disabled>
       <span id="acceptLabel">בחר</span>
-    </button>
-    <button class="btn-retry" id="retryBtn" disabled>
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <polyline points="23 4 23 10 17 10"></polyline>
-        <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
-      </svg>
-      <span id="retryLabel">הצעה אחרת</span>
     </button>
   </div>
 </div>
@@ -518,10 +505,10 @@ const els = {
   card: document.getElementById('card'),
   quoteText: document.getElementById('quoteText'),
   forUser: document.getElementById('forUser'),
-  optionDots: document.getElementById('optionDots'),
   acceptBtn: document.getElementById('acceptBtn'),
   acceptLabel: document.getElementById('acceptLabel'),
-  retryBtn: document.getElementById('retryBtn'),
+  prevBtn: document.getElementById('prevBtn'),
+  nextBtn: document.getElementById('nextBtn'),
   panel: document.getElementById('panel'),
   backBtn: document.getElementById('backBtn'),
   panelSaveBtn: document.getElementById('panelSaveBtn'),
@@ -552,23 +539,14 @@ function renderStyleBar(){
 function setLocked(locked){
   els.card.classList.toggle('locked', locked);
   els.acceptBtn.disabled = locked;
-  els.retryBtn.disabled = locked;
+  els.prevBtn.disabled = locked;
+  els.nextBtn.disabled = locked;
   if(locked){
     els.quoteText.classList.add('placeholder');
     els.quoteText.textContent = 'בחר/י סגנון למעלה כדי לראות כאן הצעת תגובה.';
     els.forUser.textContent = '—';
-    els.optionDots.innerHTML = '';
   } else {
     els.quoteText.classList.remove('placeholder');
-  }
-}
-
-function renderDots(active, total){
-  els.optionDots.innerHTML = '';
-  for(let i=0;i<total;i++){
-    const d = document.createElement('span');
-    if(i === active) d.classList.add('active');
-    els.optionDots.appendChild(d);
   }
 }
 
@@ -585,8 +563,8 @@ async function loadSuggestion(index, animate){
   }
 
   els.acceptBtn.disabled = true;
-  els.retryBtn.disabled = true;
-  els.retryBtn.classList.add('spinning');
+  els.prevBtn.disabled = true;
+  els.nextBtn.disabled = true;
   els.acceptBtn.classList.remove('done');
   els.acceptLabel.textContent = 'בחר';
 
@@ -601,12 +579,11 @@ async function loadSuggestion(index, animate){
   const options = SUGGESTIONS_BY_TONE[currentStyle.tone] || SUGGESTIONS_BY_TONE.emotional;
 
   els.quoteText.textContent = text;
-  els.forUser.textContent = `סגנון: ${TONE_LABEL[currentStyle.tone]}`;
-  renderDots(index % options.length, options.length);
+  els.forUser.textContent = `התגובה שלך: ${(index % options.length) + 1}`;
 
   els.acceptBtn.disabled = false;
-  els.retryBtn.disabled = false;
-  els.retryBtn.classList.remove('spinning');
+  els.prevBtn.disabled = false;
+  els.nextBtn.disabled = false;
   currentText = text;
 }
 
@@ -696,13 +673,14 @@ function pool(){
 }
 
 async function navigate(direction){
-  if(!currentStyle || els.retryBtn.disabled) return;
+  if(!currentStyle || els.nextBtn.disabled) return;
   const len = pool().length;
   suggestionIndex = ((suggestionIndex + direction) % len + len) % len;
   await loadSuggestion(suggestionIndex, true);
 }
 
-els.retryBtn.addEventListener('click', () => navigate(1));
+els.prevBtn.addEventListener('click', () => navigate(-1));
+els.nextBtn.addEventListener('click', () => navigate(1));
 
 document.addEventListener('keydown', (e) => {
   if(els.panel.classList.contains('open')) return;
