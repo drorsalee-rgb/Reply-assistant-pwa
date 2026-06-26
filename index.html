@@ -238,6 +238,13 @@
   .btn-accept.done{ background:var(--good); color:#0e1f15; }
   .btn-accept:disabled{ background:#3a4d52; color:#7c9499; pointer-events:none; }
 
+  .hint{
+    text-align:center;
+    font-size:13px;
+    color:#7ea3aa;
+    margin:0;
+  }
+
   .skeleton{
     background:linear-gradient(90deg, rgba(255,255,255,0.08) 25%, rgba(255,255,255,0.18) 37%, rgba(255,255,255,0.08) 63%);
     background-size:400% 100%;
@@ -413,8 +420,9 @@
 
   <div class="actions">
     <button class="btn-accept" id="acceptBtn" disabled>
-      <span id="acceptLabel">בחר</span>
+      <span id="acceptLabel">העתק ופתח</span>
     </button>
+    <p class="hint">הדבק תגובה אחרי פתיחה</p>
   </div>
 </div>
 
@@ -584,7 +592,7 @@ async function loadSuggestion(index, animate){
   els.prevBtn.disabled = true;
   els.nextBtn.disabled = true;
   els.acceptBtn.classList.remove('done');
-  els.acceptLabel.textContent = 'בחר';
+  els.acceptLabel.textContent = 'העתק ופתח';
 
   if(animate){
     els.quoteText.innerHTML = `<span class="skeleton" style="width:100%;display:block;margin-bottom:8px;"></span><span class="skeleton" style="width:80%;display:block;"></span>`;
