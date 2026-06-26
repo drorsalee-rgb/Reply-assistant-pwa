@@ -1,6 +1,6 @@
 {
-  "name": "Reply Assistant",
-  "short_name": "Reply",
+  "name": "Yoriki Social",
+  "short_name": "Yoriki",
   "description": "Get a personalized suggested reply, one tap to copy.",
   "start_url": "./index.html",
   "scope": "./",
