@@ -120,9 +120,6 @@
     border-radius:10px;
     border:1px solid rgba(255,255,255,0.06);
   }
-  .context .src-row{ display:flex; align-items:center; gap:8px; }
-  .context .dot{width:6px;height:6px;border-radius:50%;background:var(--gold);flex:none;}
-  .context .src{color:#cdd9d1;}
   .context .snippet{
     white-space:pre-line;
     opacity:0.85;
@@ -389,8 +386,7 @@
   </div>
 
   <div class="context" id="context">
-    <span class="dot"></span>
-    <span class="src">טוען פרטי הפוסט…</span>
+    <span class="snippet">טוען פרטי הפוסט…</span>
   </div>
 
   <div class="card-wrap">
@@ -588,10 +584,7 @@ function renderDots(active, total){
 }
 
 function renderContext(ctx){
-  els.context.innerHTML = `
-    <span class="src-row"><span class="dot"></span><span class="src">${ctx.source}</span></span>
-    <span class="snippet">${ctx.snippet}</span>
-  `;
+  els.context.innerHTML = `<span class="snippet">${ctx.snippet}</span>`;
 }
 
 async function loadSuggestion(index, animate){
