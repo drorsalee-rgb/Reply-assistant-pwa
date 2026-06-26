@@ -1,0 +1,751 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#17261f" />
+<title>עוזר תגובות</title>
+<link rel="manifest" href="manifest.json" />
+<link rel="apple-touch-icon" href="icons/icon-192.png" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500&family=Noto+Sans+Hebrew:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#17261f;
+    --bg-soft:#1e3127;
+    --paper:#faf7f0;
+    --paper-edge:#ece6d8;
+    --ink:#1c2620;
+    --ink-soft:#5b6660;
+    --gold:#d9a14b;
+    --gold-deep:#b9822f;
+    --good:#5f9c7d;
+    --warn:#d97a4b;
+    --warn-bg:#3a2a1c;
+    --panel:#0e1410;
+    --panel-border:#33453c;
+    --field-bg:#16201a;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:
+      radial-gradient(ellipse 80% 50% at 50% -10%, var(--bg-soft), transparent),
+      var(--bg);
+    min-height:100vh;
+    font-family:'Noto Sans Hebrew','Inter',sans-serif;
+    color:var(--paper);
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    padding:24px;
+    -webkit-tap-highlight-color:transparent;
+  }
+  .screen{
+    width:100%;
+    max-width:420px;
+    display:flex;
+    flex-direction:column;
+    align-items:stretch;
+    gap:14px;
+  }
+
+  .style-bar{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:10px;
+    padding:10px 14px;
+    border-radius:14px;
+    background:rgba(255,255,255,0.05);
+    border:1px solid rgba(255,255,255,0.07);
+  }
+  .style-bar .label{
+    font-family:'JetBrains Mono',monospace;
+    font-size:10px;
+    letter-spacing:0.02em;
+    color:#8aa097;
+    display:block;
+    margin-bottom:2px;
+  }
+  .style-bar .value{
+    font-size:14px;
+    font-weight:600;
+    color:var(--paper);
+  }
+  .style-bar .value.empty{
+    color:#7c8c82;
+    font-weight:500;
+    font-style:italic;
+  }
+  .edit-btn{
+    flex:none;
+    width:34px;height:34px;
+    border-radius:50%;
+    background:rgba(255,255,255,0.08);
+    display:flex;align-items:center;justify-content:center;
+    transition:background .15s ease, transform .15s ease;
+  }
+  .edit-btn:active{ transform:scale(0.92); background:rgba(255,255,255,0.16); }
+  .edit-btn svg{ width:16px;height:16px; color:var(--gold); }
+
+  .banner{
+    display:none;
+    align-items:center;
+    gap:10px;
+    padding:12px 14px;
+    border-radius:12px;
+    background:var(--warn-bg);
+    color:#f0c9a8;
+    font-size:13px;
+    font-weight:600;
+    cursor:pointer;
+  }
+  .banner.show{ display:flex; }
+  .banner .dot{
+    flex:none; width:7px;height:7px;border-radius:50%;background:var(--warn);
+  }
+
+  .context{
+    display:flex;
+    align-items:center;
+    gap:10px;
+    font-family:'JetBrains Mono',monospace;
+    font-size:12px;
+    color:#9fb0a6;
+    padding:0 4px;
+  }
+  .context .dot{width:6px;height:6px;border-radius:50%;background:var(--gold);flex:none;}
+  .context .src{color:#cdd9d1;}
+  .context .snippet{
+    overflow:hidden;
+    text-overflow:ellipsis;
+    white-space:nowrap;
+    opacity:0.75;
+  }
+
+  .card-wrap{ position:relative; }
+  .card{
+    position:relative;
+    background:var(--paper);
+    color:var(--ink);
+    border-radius:18px;
+    padding:30px 26px 26px;
+    min-height:180px;
+    box-shadow:0 18px 40px -12px rgba(0,0,0,0.45);
+    transition:transform .35s cubic-bezier(.2,.8,.2,1), opacity .3s ease, filter .25s ease;
+  }
+  .card.locked{ filter:grayscale(0.5) brightness(0.92); }
+  .perf{
+    display:flex;
+    justify-content:space-between;
+    padding:0 6px 16px;
+    margin:-4px -6px 4px;
+  }
+  .perf span{
+    width:6px;height:6px;border-radius:50%;
+    background:var(--paper-edge);
+  }
+  .quote-text{
+    font-family:'Noto Sans Hebrew','Fraunces',serif;
+    font-size:20px;
+    line-height:1.6;
+    font-weight:600;
+    margin:0;
+    min-height:60px;
+  }
+  .quote-text.placeholder{
+    color:var(--ink-soft);
+    font-style:italic;
+    font-size:16px;
+    font-weight:500;
+  }
+
+  .card.swap-out{ transform:translateX(14px) scale(.985); opacity:0; }
+  .card.swap-in{ transform:translateX(-14px) scale(.985); opacity:0; }
+
+  .meta-row{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    margin-top:18px;
+    padding-top:14px;
+    border-top:1px dashed var(--paper-edge);
+  }
+  .meta-row .for-user{
+    font-family:'JetBrains Mono',monospace;
+    font-size:11px;
+    color:var(--ink-soft);
+  }
+  .option-dots{ display:flex; gap:5px; }
+  .option-dots span{
+    width:5px;height:5px;border-radius:50%;background:var(--paper-edge);
+  }
+  .option-dots span.active{ background:var(--gold-deep); }
+
+  .actions{ display:flex; flex-direction:column; gap:10px; }
+  button{
+    font-family:'Noto Sans Hebrew','Inter',sans-serif;
+    border:none;
+    cursor:pointer;
+    -webkit-appearance:none;
+  }
+  .btn-accept{
+    background:var(--gold);
+    color:#231708;
+    font-weight:700;
+    font-size:16px;
+    padding:16px 20px;
+    border-radius:14px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    gap:8px;
+    transition:transform .15s ease, background .15s ease, opacity .2s ease;
+  }
+  .btn-accept:active{ transform:scale(0.97); }
+  .btn-accept.done{ background:var(--good); color:#0e1f15; }
+  .btn-accept:disabled{ background:#5b6660; color:#a9b3ad; pointer-events:none; }
+
+  .btn-retry{
+    background:transparent;
+    color:#cdd9d1;
+    font-size:14px;
+    font-weight:500;
+    padding:10px 8px;
+    border-radius:10px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    gap:6px;
+    opacity:0.85;
+  }
+  .btn-retry:active{ opacity:0.6; }
+  .btn-retry svg{ width:15px;height:15px; transition:transform .4s ease; }
+  .btn-retry.spinning svg{ transform:rotate(180deg); }
+  .btn-retry:disabled{ opacity:0.3; pointer-events:none; }
+
+  .hint{
+    text-align:center;
+    font-size:12px;
+    color:#7c8c82;
+    padding:0 12px;
+  }
+
+  .skeleton{
+    background:linear-gradient(90deg, var(--paper-edge) 25%, #f5f1e7 37%, var(--paper-edge) 63%);
+    background-size:400% 100%;
+    animation:shimmer 1.4s ease infinite;
+    border-radius:6px;
+    height:14px;
+  }
+  @keyframes shimmer{0%{background-position:100% 50%}100%{background-position:0 50%}}
+
+  /* ---------- full-screen edit-style panel ---------- */
+  .panel{
+    position:fixed; inset:0;
+    background:var(--panel);
+    color:var(--paper);
+    z-index:10;
+    transform:translateY(100%);
+    transition:transform .32s cubic-bezier(.2,.8,.2,1);
+    overflow-y:auto;
+    direction:rtl;
+  }
+  .panel.open{ transform:translateY(0); }
+  .panel-inner{
+    max-width:420px;
+    margin:0 auto;
+    padding:18px 22px 32px;
+  }
+  .panel-header{
+    display:flex;
+    align-items:center;
+    position:relative;
+    padding:8px 0 22px;
+  }
+  .back-btn{
+    position:absolute; right:0;
+    width:36px;height:36px;
+    display:flex;align-items:center;justify-content:center;
+    background:transparent;
+    color:var(--paper);
+  }
+  .back-btn svg{ width:22px;height:22px; }
+  .panel-header h1{
+    flex:1;
+    text-align:center;
+    font-size:19px;
+    font-weight:700;
+    margin:0;
+  }
+  .panel-desc{
+    font-size:14px;
+    line-height:1.7;
+    color:#aebdb5;
+    margin:0 0 28px;
+  }
+  .field{ margin-bottom:22px; }
+  .field-label{
+    font-size:14px;
+    font-weight:600;
+    color:var(--paper);
+    margin:0 0 10px;
+  }
+  .dropdown{ position:relative; }
+  .dropdown-trigger{
+    width:100%;
+    background:var(--field-bg);
+    border:1.5px solid var(--panel-border);
+    border-radius:12px;
+    padding:15px 16px;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    color:var(--paper);
+    font-size:15px;
+    font-weight:600;
+    transition:border-color .15s ease;
+  }
+  .dropdown.open .dropdown-trigger{
+    border-color:var(--gold);
+  }
+  .dropdown-trigger .chev{
+    width:16px;height:16px;
+    color:#9fb0a6;
+    transition:transform .2s ease;
+    flex:none;
+  }
+  .dropdown.open .dropdown-trigger .chev{ transform:rotate(180deg); }
+  .dropdown-trigger .current.placeholder{ color:#6c7d73; font-weight:500; }
+
+  .dropdown-list{
+    margin-top:8px;
+    border:1.5px solid var(--gold);
+    border-radius:12px;
+    overflow:hidden;
+    background:#1c2820;
+    max-height:0;
+    opacity:0;
+    transition:max-height .25s ease, opacity .2s ease;
+  }
+  .dropdown.open .dropdown-list{
+    max-height:260px;
+    opacity:1;
+  }
+  .dropdown-option{
+    width:100%;
+    text-align:right;
+    padding:14px 16px;
+    font-size:15px;
+    font-weight:600;
+    color:#dde7e1;
+    background:transparent;
+    border-bottom:1px solid rgba(255,255,255,0.07);
+  }
+  .dropdown-option:last-child{ border-bottom:none; }
+  .dropdown-option.selected{ color:var(--gold); }
+  .dropdown-option:active{ background:rgba(255,255,255,0.05); }
+
+  .panel-save{
+    width:100%;
+    background:var(--gold);
+    color:#231708;
+    font-weight:700;
+    font-size:16px;
+    padding:16px;
+    border-radius:14px;
+    margin-top:8px;
+    transition:transform .15s ease, opacity .2s ease;
+  }
+  .panel-save:active{ transform:scale(0.98); }
+  .panel-save:disabled{ opacity:0.45; pointer-events:none; }
+</style>
+</head>
+<body>
+
+<div class="screen">
+
+  <div class="style-bar" id="styleBar">
+    <div>
+      <span class="label">הסגנון שלי</span>
+      <span class="value empty" id="styleValue">לא נבחר</span>
+    </div>
+    <button class="edit-btn" id="editStyleBtn" aria-label="עריכת סגנון">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"></path>
+      </svg>
+    </button>
+  </div>
+
+  <div class="banner" id="banner">
+    <span class="dot"></span>
+    <span>בחר/י סגנון כדי לקבל הצעות</span>
+  </div>
+
+  <div class="context" id="context">
+    <span class="dot"></span>
+    <span class="src">טוען פרטי הפוסט…</span>
+  </div>
+
+  <div class="card-wrap">
+    <div class="card" id="card">
+      <div class="perf">
+        <span></span><span></span><span></span><span></span><span></span>
+        <span></span><span></span><span></span><span></span><span></span>
+      </div>
+      <p class="quote-text" id="quoteText">
+        <span class="skeleton" style="width:100%;display:block;margin-bottom:8px;"></span>
+        <span class="skeleton" style="width:80%;display:block;"></span>
+      </p>
+      <div class="meta-row">
+        <span class="for-user" id="forUser">מכין/ה הצעה…</span>
+        <div class="option-dots" id="optionDots"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="actions">
+    <button class="btn-accept" id="acceptBtn" disabled>
+      <span id="acceptLabel">העתק/י תגובה</span>
+    </button>
+    <button class="btn-retry" id="retryBtn" disabled>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="23 4 23 10 17 10"></polyline>
+        <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+      </svg>
+      <span id="retryLabel">הצעה אחרת</span>
+    </button>
+  </div>
+
+  <p class="hint" id="hint">הדבק/י אותה כתגובה לפוסט.</p>
+</div>
+
+<!-- full-screen style panel -->
+<div class="panel" id="panel">
+  <div class="panel-inner">
+    <div class="panel-header">
+      <button class="back-btn" id="backBtn" aria-label="חזרה">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="15 18 9 12 15 6"></polyline>
+        </svg>
+      </button>
+      <h1 id="panelTitle">סגנון תגובה</h1>
+    </div>
+    <p class="panel-desc">הצעות התגובה נוצרות באופן אוטומטי בעזרת הפרמטרים האישיים וההעדפות שלך:</p>
+
+    <div class="field">
+      <p class="field-label">מגדר</p>
+      <div class="dropdown" id="genderDropdown">
+        <button class="dropdown-trigger" type="button">
+          <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+          <span class="current placeholder" id="genderCurrent">בחר/י</span>
+        </button>
+        <div class="dropdown-list" id="genderList">
+          <button class="dropdown-option" data-value="male">זכר</button>
+          <button class="dropdown-option" data-value="female">נקבה</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="field">
+      <p class="field-label">סגנון תגובה</p>
+      <div class="dropdown" id="toneDropdown">
+        <button class="dropdown-trigger" type="button">
+          <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+          <span class="current placeholder" id="toneCurrent">בחר/י</span>
+        </button>
+        <div class="dropdown-list" id="toneList">
+          <button class="dropdown-option" data-value="cynical">ציני</button>
+          <button class="dropdown-option" data-value="emotional">רגשי</button>
+          <button class="dropdown-option" data-value="formal">ממלכתי</button>
+          <button class="dropdown-option" data-value="aggressive">אגרסיבי</button>
+        </div>
+      </div>
+    </div>
+
+    <button class="panel-save" id="panelSaveBtn">שמירה</button>
+  </div>
+</div>
+
+<script>
+const params = new URLSearchParams(window.location.search);
+const token = params.get('token') || 'demo-token';
+
+const MOCK_CONTEXT = {
+  source: 'linkedin.com',
+  snippet: '"מתרגשים לבשר שסגרנו סיבוב גיוס Series A — תודה גדולה לצוות..."',
+  // The real, canonical URL of the post. Your backend should return this
+  // alongside the suggestion — it's what triggers the OS-level handoff to
+  // the native app (Universal Links / App Links) when one is installed.
+  postUrl: 'https://www.linkedin.com/posts/example-series-a-announcement'
+};
+
+const SUGGESTIONS_BY_TONE = {
+  cynical:   ["מזל טוב! עוד קצת ותתחילו לדבר על \u05D4'שינוי העולם' כמו כולם.", "Series A, איזה חידוש. בהצלחה עם ה-burn rate החדש."],
+  emotional: ["כל הכבוד! ניכר כמה עבודה ואהבה הושקעו כאן — מתרגש/ת בשבילכם.", "קראתי את זה ופשוט שמח/ה. מגיע לכם כל מילה טובה."],
+  formal:    ["ברכות חמות על ההשקעה המשמעותית והישג זה לחברה ולצוות.", "מבקש/ת להעביר ברכות על ההצלחה. התמדה זו ראויה להערכה."],
+  aggressive:["תותחים! קדימה לשבור את השוק 🚀", "סיבוב גיוס? זה רק ההתחלה. קדימה לכבוש."]
+};
+
+let suggestionIndex = 0;
+
+function fetchContext(){
+  return new Promise(resolve => setTimeout(() => resolve(MOCK_CONTEXT), 450));
+}
+
+function fetchSuggestion(tone, index){
+  const pool = SUGGESTIONS_BY_TONE[tone] || SUGGESTIONS_BY_TONE.emotional;
+  return new Promise(resolve => setTimeout(() => resolve(pool[index % pool.length]), 600));
+}
+
+function getStyle(){
+  const match = document.cookie.match(/(?:^|;\s*)style=([^;]+)/);
+  if(!match) return null;
+  try{ return JSON.parse(decodeURIComponent(match[1])); }catch(e){ return null; }
+}
+
+function setStyle(style){
+  const maxAge = 60 * 60 * 24 * 365 * 2;
+  document.cookie = `style=${encodeURIComponent(JSON.stringify(style))}; max-age=${maxAge}; path=/; SameSite=Lax`;
+}
+
+const GENDER_LABEL = { male:'זכר', female:'נקבה' };
+const TONE_LABEL = { cynical:'ציני', emotional:'רגשי', formal:'ממלכתי', aggressive:'אגרסיבי' };
+
+const els = {
+  styleValue: document.getElementById('styleValue'),
+  editStyleBtn: document.getElementById('editStyleBtn'),
+  banner: document.getElementById('banner'),
+  context: document.getElementById('context'),
+  card: document.getElementById('card'),
+  quoteText: document.getElementById('quoteText'),
+  forUser: document.getElementById('forUser'),
+  optionDots: document.getElementById('optionDots'),
+  acceptBtn: document.getElementById('acceptBtn'),
+  acceptLabel: document.getElementById('acceptLabel'),
+  retryBtn: document.getElementById('retryBtn'),
+  hint: document.getElementById('hint'),
+  panel: document.getElementById('panel'),
+  backBtn: document.getElementById('backBtn'),
+  panelSaveBtn: document.getElementById('panelSaveBtn'),
+  genderDropdown: document.getElementById('genderDropdown'),
+  genderCurrent: document.getElementById('genderCurrent'),
+  genderList: document.getElementById('genderList'),
+  toneDropdown: document.getElementById('toneDropdown'),
+  toneCurrent: document.getElementById('toneCurrent'),
+  toneList: document.getElementById('toneList'),
+};
+
+let currentText = '';
+let currentStyle = getStyle();
+let draft = { gender:null, tone:null };
+
+function renderStyleBar(){
+  if(currentStyle){
+    els.styleValue.textContent = `${GENDER_LABEL[currentStyle.gender]} · ${TONE_LABEL[currentStyle.tone]}`;
+    els.styleValue.classList.remove('empty');
+    els.banner.classList.remove('show');
+  } else {
+    els.styleValue.textContent = 'לא נבחר';
+    els.styleValue.classList.add('empty');
+    els.banner.classList.add('show');
+  }
+}
+
+function setLocked(locked){
+  els.card.classList.toggle('locked', locked);
+  els.acceptBtn.disabled = locked;
+  els.retryBtn.disabled = locked;
+  if(locked){
+    els.quoteText.classList.add('placeholder');
+    els.quoteText.textContent = 'בחר/י סגנון למעלה כדי לראות כאן הצעת תגובה.';
+    els.forUser.textContent = '—';
+    els.optionDots.innerHTML = '';
+    els.hint.textContent = 'עדיין לא נבחר סגנון.';
+  } else {
+    els.quoteText.classList.remove('placeholder');
+  }
+}
+
+function renderDots(active, total){
+  els.optionDots.innerHTML = '';
+  for(let i=0;i<total;i++){
+    const d = document.createElement('span');
+    if(i === active) d.classList.add('active');
+    els.optionDots.appendChild(d);
+  }
+}
+
+function renderContext(ctx){
+  els.context.innerHTML = `
+    <span class="dot"></span>
+    <span class="src">${ctx.source}</span>
+    <span class="snippet">${ctx.snippet}</span>
+  `;
+}
+
+async function loadSuggestion(index, animate){
+  if(!currentStyle) return;
+
+  if(animate){
+    els.card.classList.add('swap-out');
+    await new Promise(r => setTimeout(r, 220));
+  }
+
+  els.acceptBtn.disabled = true;
+  els.retryBtn.disabled = true;
+  els.retryBtn.classList.add('spinning');
+  els.acceptBtn.classList.remove('done');
+  els.acceptLabel.textContent = 'העתק/י תגובה';
+  els.hint.textContent = 'הדבק/י אותה כתגובה לפוסט.';
+
+  if(animate){
+    els.quoteText.innerHTML = `<span class="skeleton" style="width:100%;display:block;margin-bottom:8px;"></span><span class="skeleton" style="width:80%;display:block;"></span>`;
+    els.card.classList.remove('swap-out');
+    els.card.classList.add('swap-in');
+    requestAnimationFrame(() => els.card.classList.remove('swap-in'));
+  }
+
+  const text = await fetchSuggestion(currentStyle.tone, index);
+  const pool = SUGGESTIONS_BY_TONE[currentStyle.tone] || SUGGESTIONS_BY_TONE.emotional;
+
+  els.quoteText.textContent = text;
+  els.forUser.textContent = `סגנון: ${TONE_LABEL[currentStyle.tone]}`;
+  renderDots(index % pool.length, pool.length);
+
+  els.acceptBtn.disabled = false;
+  els.retryBtn.disabled = false;
+  els.retryBtn.classList.remove('spinning');
+  currentText = text;
+}
+
+async function refreshUI(animateOnLoad){
+  renderStyleBar();
+  if(currentStyle){
+    setLocked(false);
+    await loadSuggestion(suggestionIndex, animateOnLoad);
+  } else {
+    setLocked(true);
+  }
+}
+
+/* ---- dropdowns ---- */
+
+function closeAllDropdowns(except){
+  [els.genderDropdown, els.toneDropdown].forEach(d => { if(d !== except) d.classList.remove('open'); });
+}
+
+function wireDropdown(dropdown, listEl, currentEl, labels){
+  dropdown.querySelector('.dropdown-trigger').addEventListener('click', () => {
+    const willOpen = !dropdown.classList.contains('open');
+    closeAllDropdowns(dropdown);
+    dropdown.classList.toggle('open', willOpen);
+  });
+  listEl.querySelectorAll('.dropdown-option').forEach(opt => {
+    opt.addEventListener('click', () => {
+      const value = opt.dataset.value;
+      listEl.querySelectorAll('.dropdown-option').forEach(o => o.classList.toggle('selected', o === opt));
+      currentEl.textContent = labels[value];
+      currentEl.classList.remove('placeholder');
+      dropdown.classList.remove('open');
+      dropdown.dataset.value = value;
+      updateSaveState();
+    });
+  });
+}
+wireDropdown(els.genderDropdown, els.genderList, els.genderCurrent, GENDER_LABEL);
+wireDropdown(els.toneDropdown, els.toneList, els.toneCurrent, TONE_LABEL);
+
+function updateSaveState(){
+  const ok = !!els.genderDropdown.dataset.value && !!els.toneDropdown.dataset.value;
+  els.panelSaveBtn.disabled = !ok;
+}
+
+function openPanel(){
+  document.title = currentStyle ? 'עריכת סגנון' : 'בחירת סגנון';
+  closeAllDropdowns(null);
+
+  const g = currentStyle ? currentStyle.gender : null;
+  const t = currentStyle ? currentStyle.tone : null;
+
+  els.genderDropdown.dataset.value = g || '';
+  els.genderCurrent.textContent = g ? GENDER_LABEL[g] : 'בחר/י';
+  els.genderCurrent.classList.toggle('placeholder', !g);
+  els.genderList.querySelectorAll('.dropdown-option').forEach(o => o.classList.toggle('selected', o.dataset.value === g));
+
+  els.toneDropdown.dataset.value = t || '';
+  els.toneCurrent.textContent = t ? TONE_LABEL[t] : 'בחר/י';
+  els.toneCurrent.classList.toggle('placeholder', !t);
+  els.toneList.querySelectorAll('.dropdown-option').forEach(o => o.classList.toggle('selected', o.dataset.value === t));
+
+  updateSaveState();
+  els.panel.classList.add('open');
+}
+function closePanel(){ els.panel.classList.remove('open'); closeAllDropdowns(null); }
+
+els.editStyleBtn.addEventListener('click', openPanel);
+els.banner.addEventListener('click', openPanel);
+els.backBtn.addEventListener('click', closePanel);
+
+els.panelSaveBtn.addEventListener('click', async () => {
+  const gender = els.genderDropdown.dataset.value;
+  const tone = els.toneDropdown.dataset.value;
+  if(!gender || !tone) return;
+  currentStyle = { gender, tone };
+  setStyle(currentStyle);
+  closePanel();
+  suggestionIndex = 0;
+  await refreshUI(true);
+});
+
+/* ---- copy / retry ---- */
+
+els.retryBtn.addEventListener('click', async () => {
+  suggestionIndex += 1;
+  await loadSuggestion(suggestionIndex, true);
+});
+
+els.acceptBtn.addEventListener('click', async () => {
+  try{
+    await navigator.clipboard.writeText(currentText);
+  }catch(e){
+    const ta = document.createElement('textarea');
+    ta.value = currentText;
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+  }
+  els.acceptBtn.classList.add('done');
+  els.acceptLabel.textContent = 'הועתק ✓';
+  els.hint.textContent = 'הועתק ללוח — פותח את הפוסט המקורי…';
+
+  // Navigate to the real post URL right away, in the same user gesture.
+  // No device/app detection needed: if the platform's app is installed and
+  // registered for Universal Links (iOS) / App Links (Android), the OS
+  // opens the app directly; otherwise it falls through to the browser.
+  // This must NOT be wrapped in setTimeout — delaying it can break iOS's
+  // requirement that the navigation stay tied to the user's tap.
+  if(MOCK_CONTEXT.postUrl){
+    window.location.href = MOCK_CONTEXT.postUrl;
+  }
+});
+
+/* ---- init ---- */
+
+async function init(){
+  const ctx = await fetchContext();
+  renderContext(ctx);
+  await refreshUI(false);
+}
+init();
+
+if('serviceWorker' in navigator){
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('service-worker.js').catch(()=>{});
+  });
+}
+</script>
+</body>
+</html>
