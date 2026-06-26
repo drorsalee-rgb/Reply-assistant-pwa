@@ -46,21 +46,23 @@
       radial-gradient(ellipse 80% 50% at 50% -10%, var(--bg-soft), transparent),
       var(--bg);
     min-height:100vh;
+    min-height:100dvh;
     font-family:'Noto Sans Hebrew','Inter',sans-serif;
     color:var(--paper);
     display:flex;
-    align-items:center;
     justify-content:center;
-    padding:24px;
     -webkit-tap-highlight-color:transparent;
   }
   .screen{
     width:100%;
     max-width:420px;
+    min-height:100vh;
+    min-height:100dvh;
     display:flex;
     flex-direction:column;
     align-items:stretch;
     gap:14px;
+    padding:max(20px, env(safe-area-inset-top)) 20px max(20px, env(safe-area-inset-bottom));
   }
 
   .style-bar{
@@ -203,7 +205,7 @@
   .card.swap-out{ transform:translateX(14px) scale(.985); opacity:0; }
   .card.swap-in{ transform:translateX(-14px) scale(.985); opacity:0; }
 
-  .actions{ display:flex; flex-direction:column; gap:10px; }
+  .actions{ display:flex; flex-direction:column; gap:10px; margin-top:auto; }
   button{
     font-family:'Noto Sans Hebrew','Inter',sans-serif;
     border:none;
