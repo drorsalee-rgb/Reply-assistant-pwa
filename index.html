@@ -697,8 +697,8 @@ els.card.addEventListener('touchend', (e) => {
   const dx = e.changedTouches[0].clientX - touchStartX;
   touchStartX = null;
   const SWIPE_THRESHOLD = 40;
-  if(dx <= -SWIPE_THRESHOLD) navigate(1);
-  else if(dx >= SWIPE_THRESHOLD) navigate(-1);
+  if(dx <= -SWIPE_THRESHOLD) navigate(-1);
+  else if(dx >= SWIPE_THRESHOLD) navigate(1);
 });
 
 els.acceptBtn.addEventListener('click', async () => {
