@@ -123,6 +123,21 @@
     flex:none; width:7px;height:7px;border-radius:50%;background:var(--warn);
   }
 
+  .context-wrap{
+    display:flex;
+    flex-direction:column;
+    gap:6px;
+    flex:1 1 auto;
+    min-height:0;
+  }
+  .section-label{
+    flex:none;
+    margin:0;
+    font-family:'JetBrains Mono',monospace;
+    font-size:13px;
+    letter-spacing:0.02em;
+    color:#8aa097;
+  }
   .context{
     display:flex;
     flex-direction:column;
@@ -396,8 +411,11 @@
     <span>בחר/י סגנון כדי לקבל הצעות</span>
   </div>
 
-  <div class="context" id="context">
-    <span class="snippet">טוען פרטי הפוסט…</span>
+  <div class="context-wrap">
+    <p class="section-label">תקציר הפוסט</p>
+    <div class="context" id="context">
+      <span class="snippet">טוען פרטי הפוסט…</span>
+    </div>
   </div>
 
   <div class="card-wrap">
