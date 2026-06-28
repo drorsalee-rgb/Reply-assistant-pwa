@@ -879,8 +879,29 @@ window.addEventListener('pagehide', () => {
 
 /* ---- init ---- */
 
+// Prefer the post-info API as the source of truth once it's available;
+// fall back to the URL query params (post_url/post_snippet) otherwise.
+async function fetchPostInfo(){
+  if(!documentId) return null;
+  try{
+    const res = await fetch(API_BASE + '/post-info?document_id=' + encodeURIComponent(documentId));
+    if(!res.ok) return null;
+    return await res.json();
+  }catch(e){
+    return null;
+  }
+}
+
 async function init(){
   renderContext(PAGE_CONTEXT);
+
+  const info = await fetchPostInfo();
+  if(info){
+    if(info.post_snippet) PAGE_CONTEXT.snippet = info.post_snippet;
+    if(info.post_url) PAGE_CONTEXT.postUrl = info.post_url;
+    renderContext(PAGE_CONTEXT);
+  }
+
   await refreshUI(false);
 }
 init();
