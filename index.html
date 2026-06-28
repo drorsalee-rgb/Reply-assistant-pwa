@@ -127,10 +127,28 @@
     display:flex;
     flex-direction:column;
     gap:6px;
-    flex:0 1 auto;
-    max-height:160px;
+    flex:none;
     min-height:0;
   }
+
+  .resize-handle{
+    flex:none;
+    height:20px;
+    margin:-7px 0;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    cursor:row-resize;
+    touch-action:none;
+    -webkit-tap-highlight-color:transparent;
+  }
+  .resize-handle .grip{
+    width:40px;height:5px;border-radius:3px;
+    background:rgba(255,255,255,0.18);
+    transition:background .15s ease;
+  }
+  .resize-handle:active .grip,
+  .resize-handle.dragging .grip{ background:var(--accent); }
   .section-label{
     flex:none;
     margin:0;
@@ -412,11 +430,15 @@
     <span>בחר/י סגנון כדי לקבל הצעות</span>
   </div>
 
-  <div class="context-wrap">
+  <div class="context-wrap" id="contextWrap">
     <p class="section-label">תקציר הפוסט</p>
     <div class="context" id="context">
       <span class="snippet">טוען פרטי הפוסט…</span>
     </div>
+  </div>
+
+  <div class="resize-handle" id="resizeHandle" role="separator" aria-label="שינוי גודל תקציר הפוסט" aria-orientation="horizontal">
+    <span class="grip"></span>
   </div>
 
   <div class="card-wrap">
@@ -562,7 +584,58 @@ const els = {
   toneDropdown: document.getElementById('toneDropdown'),
   toneCurrent: document.getElementById('toneCurrent'),
   toneList: document.getElementById('toneList'),
+  contextWrap: document.getElementById('contextWrap'),
+  resizeHandle: document.getElementById('resizeHandle'),
 };
+
+/* ---- resizable post-description box ---- */
+
+const CONTEXT_HEIGHT_KEY = 'contextBoxHeight';
+const CONTEXT_MIN_H = 70;
+const CONTEXT_MAX_H = 320;
+const CONTEXT_DEFAULT_H = 170;
+
+function applyContextHeight(h){
+  const clamped = Math.max(CONTEXT_MIN_H, Math.min(CONTEXT_MAX_H, h));
+  els.contextWrap.style.height = clamped + 'px';
+  return clamped;
+}
+
+(function initContextHeight(){
+  const saved = parseInt(localStorage.getItem(CONTEXT_HEIGHT_KEY), 10);
+  applyContextHeight(!isNaN(saved) ? saved : CONTEXT_DEFAULT_H);
+})();
+
+let resizeStartY = null;
+let resizeStartH = null;
+
+function onResizeMove(e){
+  if(resizeStartY === null) return;
+  const y = e.touches ? e.touches[0].clientY : e.clientY;
+  applyContextHeight(resizeStartH + (y - resizeStartY));
+}
+function onResizeEnd(){
+  if(resizeStartY === null) return;
+  resizeStartY = null;
+  els.resizeHandle.classList.remove('dragging');
+  localStorage.setItem(CONTEXT_HEIGHT_KEY, Math.round(els.contextWrap.getBoundingClientRect().height));
+  document.removeEventListener('pointermove', onResizeMove);
+  document.removeEventListener('pointerup', onResizeEnd);
+  document.removeEventListener('touchmove', onResizeMove);
+  document.removeEventListener('touchend', onResizeEnd);
+}
+function onResizeStart(e){
+  resizeStartY = e.touches ? e.touches[0].clientY : e.clientY;
+  resizeStartH = els.contextWrap.getBoundingClientRect().height;
+  els.resizeHandle.classList.add('dragging');
+  document.addEventListener('pointermove', onResizeMove);
+  document.addEventListener('pointerup', onResizeEnd);
+  document.addEventListener('touchmove', onResizeMove, { passive: true });
+  document.addEventListener('touchend', onResizeEnd);
+  e.preventDefault();
+}
+els.resizeHandle.addEventListener('pointerdown', onResizeStart);
+els.resizeHandle.addEventListener('touchstart', onResizeStart, { passive: false });
 
 let currentText = '';
 let currentStyle = getStyle();
