@@ -714,11 +714,12 @@ async function claimReactions(){
   return false;
 }
 
-function returnUnused(excludeId){
-  if(!documentId || !currentStyle) return;
+function returnUnused(excludeId, reactionArrayNameOverride){
+  if(!documentId) return;
+  const reaction_array_name = reactionArrayNameOverride || (currentStyle && reactionArrayNameFor(currentStyle));
+  if(!reaction_array_name) return;
   const ids = queue.map(it => it.id).filter(id => id !== excludeId);
   if(!ids.length) return;
-  const reaction_array_name = reactionArrayNameFor(currentStyle);
   try{
     fetch(API_BASE + '/return-unused', {
       method: 'POST',
@@ -813,8 +814,8 @@ async function goPrev(animate){
   els.nextBtn.disabled = false;
 }
 
-async function loadInitial(animate){
-  if(queue.length) returnUnused(null);
+async function loadInitial(animate, staleReactionArrayName){
+  if(queue.length) returnUnused(null, staleReactionArrayName);
   queue = [];
   queueIndex = -1;
   exhausted = false;
@@ -822,11 +823,11 @@ async function loadInitial(animate){
   await goNext(animate);
 }
 
-async function refreshUI(animateOnLoad){
+async function refreshUI(animateOnLoad, staleReactionArrayName){
   renderStyleBar();
   if(currentStyle){
     setLocked(false);
-    await loadInitial(animateOnLoad);
+    await loadInitial(animateOnLoad, staleReactionArrayName);
   } else {
     setLocked(true);
   }
@@ -894,10 +895,11 @@ els.panelSaveBtn.addEventListener('click', async () => {
   const gender = els.genderDropdown.dataset.value;
   const tone = els.toneDropdown.dataset.value;
   if(!gender || !tone) return;
+  const staleReactionArrayName = currentStyle ? reactionArrayNameFor(currentStyle) : null;
   currentStyle = { gender, tone };
   setStyle(currentStyle);
   closePanel();
-  await refreshUI(true);
+  await refreshUI(true, staleReactionArrayName);
 });
 
 /* ---- navigation ---- */
