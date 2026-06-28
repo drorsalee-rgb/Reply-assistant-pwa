@@ -494,14 +494,31 @@
 <script>
 const API_BASE = 'https://claim-social-reactions-ru4qjbbrxa-ew.a.run.app';
 
+// Some apps (e.g. WhatsApp/iOS link handling) re-encode an already-encoded
+// URL when the link is tapped or copied, leaving values like "%D7%9B..."
+// still percent-encoded after URLSearchParams' single automatic decode.
+// Decode repeatedly until it stops changing (bounded, so plain text with an
+// incidental "%" pattern can't loop forever).
+function safeDecode(value){
+  if(!value) return value;
+  let result = value;
+  for(let i = 0; i < 3 && /%[0-9A-Fa-f]{2}/.test(result); i++){
+    let decoded;
+    try{ decoded = decodeURIComponent(result); }catch(e){ break; }
+    if(decoded === result) break;
+    result = decoded;
+  }
+  return result;
+}
+
 const params = new URLSearchParams(window.location.search);
-const documentId = params.get('document_id') || params.get('doc') || params.get('documentId') || null;
+const documentId = safeDecode(params.get('document_id') || params.get('doc') || params.get('documentId') || null);
 
 const PAGE_CONTEXT = {
-  snippet: params.get('post_snippet') || params.get('snippet') || params.get('post_text') || 'לא התקבל תקציר פוסט.',
+  snippet: safeDecode(params.get('post_snippet') || params.get('snippet') || params.get('post_text')) || 'לא התקבל תקציר פוסט.',
   // The real, canonical URL of the post. Triggers the OS-level handoff to
   // the native app (Universal Links / App Links) when one is installed.
-  postUrl: params.get('post_url') || params.get('postUrl') || null
+  postUrl: safeDecode(params.get('post_url') || params.get('postUrl')) || null
 };
 
 
