@@ -911,6 +911,13 @@ async function fetchPostInfo(){
 }
 
 async function init(){
+  if(params.get('debug') === '1'){
+    const pre = document.createElement('pre');
+    pre.style.cssText = 'white-space:pre-wrap;word-break:break-all;background:#000;color:#0f0;padding:10px;font-size:11px;direction:ltr;text-align:left;margin:0 0 10px;border-radius:8px;';
+    pre.textContent = 'href: ' + location.href + '\n\nraw post_snippet param: ' + (params.get('post_snippet') || '(none)');
+    document.body.insertBefore(pre, document.body.firstChild);
+  }
+
   renderContext(PAGE_CONTEXT);
 
   const info = await fetchPostInfo();
