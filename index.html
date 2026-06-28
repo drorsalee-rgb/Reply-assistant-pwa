@@ -492,40 +492,18 @@
 </div>
 
 <script>
+const API_BASE = 'https://claim-social-reactions-ru4qjbbrxa-ew.a.run.app';
+
 const params = new URLSearchParams(window.location.search);
-const token = params.get('token') || 'demo-token';
+const documentId = params.get('document_id') || params.get('doc') || params.get('documentId') || null;
 
-const MOCK_CONTEXT = {
-  source: 'x.com/askdani__real/status/2066019756168118524?s=20',
-  snippet: 'התחילה עונת ה"אם תצביעו לשמאל אז שערי הגיהנום ייפתחו"\n\nאז כדאי להיזכר שבבחירות הקודמות הם הפחידו אותנו שאם נצביע לשמאל אז מחבלים על טנדרים יסעו חופשי ברחבי ישראל.',
-  // The real, canonical URL of the post. Your backend should return this
-  // alongside the suggestion — it's what triggers the OS-level handoff to
+const PAGE_CONTEXT = {
+  snippet: params.get('post_snippet') || params.get('snippet') || params.get('post_text') || 'לא התקבל תקציר פוסט.',
+  // The real, canonical URL of the post. Triggers the OS-level handoff to
   // the native app (Universal Links / App Links) when one is installed.
-  postUrl: 'https://x.com/askdani__real/status/2066019756168118524?s=20'
+  postUrl: params.get('post_url') || params.get('postUrl') || null
 };
 
-const SUGGESTIONS_BY_TONE = {
-  cynical:   ["מזל טוב! עוד קצת ותתחילו לדבר על \u05D4'שינוי העולם' כמו כולם.", "Series A, איזה חידוש. בהצלחה עם ה-burn rate החדש."],
-  emotional: ["כל הכבוד! ניכר כמה עבודה ואהבה הושקעו כאן — מתרגש/ת בשבילכם.", "קראתי את זה ופשוט שמח/ה. מגיע לכם כל מילה טובה."],
-  formal:    ["ברכות חמות על ההשקעה המשמעותית והישג זה לחברה ולצוות.", "מבקש/ת להעביר ברכות על ההצלחה. התמדה זו ראויה להערכה."],
-  aggressive:[
-    "הפחדות ריקות מתוכן של מי שהביאו עלינו את האסון! בושה של ממשלה.",
-    "כל מה שהזהרתם מפניו קרה בגללכם. אתם ההפקרה האמיתית!",
-    "איפה הביטחון שהבטחתם? קיבלנו 7 באוקטובר ועכשיו אתם בורחים מאחריות.",
-    "לפרק פינת זיכרון כדי לא לראות את המחדל? אתם מנותקים מהמציאות ומהעם."
-  ]
-};
-
-let suggestionIndex = 0;
-
-function fetchContext(){
-  return new Promise(resolve => setTimeout(() => resolve(MOCK_CONTEXT), 450));
-}
-
-function fetchSuggestion(tone, index){
-  const pool = SUGGESTIONS_BY_TONE[tone] || SUGGESTIONS_BY_TONE.emotional;
-  return new Promise(resolve => setTimeout(() => resolve(pool[index % pool.length]), 600));
-}
 
 function getStyle(){
   const match = document.cookie.match(/(?:^|;\s*)style=([^;]+)/);
@@ -540,6 +518,10 @@ function setStyle(style){
 
 const GENDER_LABEL = { male:'זכר', female:'נקבה' };
 const TONE_LABEL = { cynical:'ציני', emotional:'רגשי', formal:'ממלכתי', aggressive:'אגרסיבי' };
+
+function reactionArrayNameFor(style){
+  return `${TONE_LABEL[style.tone]}_${GENDER_LABEL[style.gender]}`;
+}
 
 const els = {
   styleValue: document.getElementById('styleValue'),
@@ -566,7 +548,14 @@ const els = {
 
 let currentText = '';
 let currentStyle = getStyle();
-let draft = { gender:null, tone:null };
+
+// Queue of {id, response} reactions claimed from the server for the
+// currently selected style. Navigating "next" past the end claims more;
+// navigating "prev" just walks back over already-claimed items.
+let queue = [];
+let queueIndex = -1;
+let exhausted = false;
+let cleanedUp = false;
 
 function renderStyleBar(){
   if(currentStyle){
@@ -598,8 +587,70 @@ function renderContext(ctx){
   els.context.innerHTML = `<span class="snippet">${ctx.snippet}</span>`;
 }
 
-async function loadSuggestion(index, animate){
-  if(!currentStyle) return;
+// ---- claim-social-reactions API ----
+
+async function claimReactions(){
+  if(!documentId || !currentStyle) return false;
+  const reaction_array_name = reactionArrayNameFor(currentStyle);
+  let attempts = 0;
+  while(attempts < 5){
+    let res;
+    try{
+      res = await fetch(API_BASE + '/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ document_id: documentId, reaction_array_name })
+      });
+    }catch(e){
+      return false; // network error — do not auto-retry
+    }
+    if(res.status === 200){
+      const data = await res.json();
+      queue.push(...(data.claimedReactions || []));
+      return true;
+    }
+    if(res.status === 503){
+      const data = await res.json().catch(() => ({}));
+      if(data.code === 'reaction_pool_empty'){
+        attempts += 1;
+        await new Promise(r => setTimeout(r, 1200 * attempts));
+        continue;
+      }
+      return false;
+    }
+    return false; // 404 (exhausted) or other errors — stop, don't poll
+  }
+  return false;
+}
+
+function returnUnused(excludeId){
+  if(!documentId || !currentStyle) return;
+  const ids = queue.map(it => it.id).filter(id => id !== excludeId);
+  if(!ids.length) return;
+  const reaction_array_name = reactionArrayNameFor(currentStyle);
+  try{
+    fetch(API_BASE + '/return-unused', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      keepalive: true,
+      body: JSON.stringify({ document_id: documentId, reaction_array_name, reaction_ids: ids })
+    }).catch(() => {});
+  }catch(e){}
+}
+
+function showExhausted(){
+  exhausted = true;
+  els.quoteText.classList.add('placeholder');
+  els.quoteText.textContent = 'אין כרגע הצעות פנויות. נסו שוב מאוחר יותר.';
+  els.forUser.textContent = '—';
+  els.acceptBtn.disabled = true;
+  els.nextBtn.disabled = true;
+  els.prevBtn.disabled = queueIndex <= 0;
+}
+
+async function goNext(animate){
+  if(!currentStyle || exhausted) return;
+  const needsFetch = queueIndex + 1 >= queue.length;
 
   if(animate){
     els.card.classList.add('swap-out');
@@ -613,29 +664,78 @@ async function loadSuggestion(index, animate){
   els.acceptLabel.textContent = 'העתק ופתח';
 
   if(animate){
+    els.quoteText.classList.remove('placeholder');
     els.quoteText.innerHTML = `<span class="skeleton" style="width:100%;display:block;margin-bottom:8px;"></span><span class="skeleton" style="width:80%;display:block;"></span>`;
+    if(needsFetch) els.forUser.textContent = 'מכין/ה הצעה…';
     els.card.classList.remove('swap-out');
     els.card.classList.add('swap-in');
     requestAnimationFrame(() => els.card.classList.remove('swap-in'));
   }
 
-  const text = await fetchSuggestion(currentStyle.tone, index);
-  const options = SUGGESTIONS_BY_TONE[currentStyle.tone] || SUGGESTIONS_BY_TONE.emotional;
+  if(needsFetch){
+    const ok = await claimReactions();
+    if(!ok || queueIndex + 1 >= queue.length){
+      showExhausted();
+      return;
+    }
+  }
 
-  els.quoteText.textContent = text;
-  els.forUser.textContent = `התגובה שלך: ${(index % options.length) + 1}`;
+  queueIndex += 1;
+  const item = queue[queueIndex];
+  els.quoteText.classList.remove('placeholder');
+  els.quoteText.textContent = item.response;
+  els.forUser.textContent = `התגובה שלך: ${queueIndex + 1}`;
+  currentText = item.response;
 
   els.acceptBtn.disabled = false;
-  els.prevBtn.disabled = false;
+  els.prevBtn.disabled = queueIndex <= 0;
   els.nextBtn.disabled = false;
-  currentText = text;
+}
+
+async function goPrev(animate){
+  if(!currentStyle || queueIndex <= 0) return;
+
+  if(animate){
+    els.card.classList.add('swap-out');
+    await new Promise(r => setTimeout(r, 220));
+  }
+
+  queueIndex -= 1;
+  const item = queue[queueIndex];
+
+  els.acceptBtn.classList.remove('done');
+  els.acceptLabel.textContent = 'העתק ופתח';
+  els.quoteText.classList.remove('placeholder');
+  els.quoteText.textContent = item.response;
+  els.forUser.textContent = `התגובה שלך: ${queueIndex + 1}`;
+  currentText = item.response;
+
+  if(animate){
+    els.card.classList.remove('swap-out');
+    els.card.classList.add('swap-in');
+    requestAnimationFrame(() => els.card.classList.remove('swap-in'));
+  }
+
+  exhausted = false; // moving back makes "next" available again
+  els.acceptBtn.disabled = false;
+  els.prevBtn.disabled = queueIndex <= 0;
+  els.nextBtn.disabled = false;
+}
+
+async function loadInitial(animate){
+  if(queue.length) returnUnused(null);
+  queue = [];
+  queueIndex = -1;
+  exhausted = false;
+  cleanedUp = false;
+  await goNext(animate);
 }
 
 async function refreshUI(animateOnLoad){
   renderStyleBar();
   if(currentStyle){
     setLocked(false);
-    await loadSuggestion(suggestionIndex, animateOnLoad);
+    await loadInitial(animateOnLoad);
   } else {
     setLocked(true);
   }
@@ -706,21 +806,14 @@ els.panelSaveBtn.addEventListener('click', async () => {
   currentStyle = { gender, tone };
   setStyle(currentStyle);
   closePanel();
-  suggestionIndex = 0;
   await refreshUI(true);
 });
 
-/* ---- copy / retry / navigation ---- */
-
-function pool(){
-  return SUGGESTIONS_BY_TONE[currentStyle.tone] || SUGGESTIONS_BY_TONE.emotional;
-}
+/* ---- navigation ---- */
 
 async function navigate(direction){
-  if(!currentStyle || els.nextBtn.disabled) return;
-  const len = pool().length;
-  suggestionIndex = ((suggestionIndex + direction) % len + len) % len;
-  await loadSuggestion(suggestionIndex, true);
+  if(direction > 0) await goNext(true);
+  else await goPrev(true);
 }
 
 els.prevBtn.addEventListener('click', () => navigate(-1));
@@ -746,6 +839,7 @@ els.card.addEventListener('touchend', (e) => {
 });
 
 els.acceptBtn.addEventListener('click', async () => {
+  const usedItem = queue[queueIndex];
   try{
     await navigator.clipboard.writeText(currentText);
   }catch(e){
@@ -759,22 +853,34 @@ els.acceptBtn.addEventListener('click', async () => {
   els.acceptBtn.classList.add('done');
   els.acceptLabel.textContent = 'הועתק ✓';
 
+  // Release the other claimed-but-unused reactions back to the pool; the
+  // accepted one stays claimed since it's the one actually being posted.
+  returnUnused(usedItem ? usedItem.id : null);
+  cleanedUp = true;
+
   // Navigate to the real post URL right away, in the same user gesture.
   // No device/app detection needed: if the platform's app is installed and
   // registered for Universal Links (iOS) / App Links (Android), the OS
   // opens the app directly; otherwise it falls through to the browser.
   // This must NOT be wrapped in setTimeout — delaying it can break iOS's
   // requirement that the navigation stay tied to the user's tap.
-  if(MOCK_CONTEXT.postUrl){
-    window.location.href = MOCK_CONTEXT.postUrl;
+  if(PAGE_CONTEXT.postUrl){
+    window.location.href = PAGE_CONTEXT.postUrl;
   }
+});
+
+// Best-effort: release any claimed-but-unused reactions if the user leaves
+// without posting (closing the tab/app, or navigating away another way).
+window.addEventListener('pagehide', () => {
+  if(cleanedUp) return;
+  cleanedUp = true;
+  returnUnused(null);
 });
 
 /* ---- init ---- */
 
 async function init(){
-  const ctx = await fetchContext();
-  renderContext(ctx);
+  renderContext(PAGE_CONTEXT);
   await refreshUI(false);
 }
 init();
