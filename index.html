@@ -998,6 +998,27 @@ async function fetchPostInfo(){
   }
 }
 
+// Stored descriptions are sometimes English; the audience reads Hebrew.
+// If less than a third of the letters are Hebrew, translate via Google's
+// public endpoint (Hebrew quotes embedded in the English survive as-is).
+function isMostlyEnglish(text){
+  const hebrew = (text.match(/[֐-׿]/g) || []).length;
+  const latin = (text.match(/[A-Za-z]/g) || []).length;
+  return latin > 0 && hebrew / (hebrew + latin) < 0.34;
+}
+
+async function translateToHebrew(text){
+  try{
+    const res = await fetch('https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=he&dt=t&q=' + encodeURIComponent(text));
+    if(!res.ok) return null;
+    const data = await res.json();
+    const out = (data[0] || []).map(seg => seg[0]).join('');
+    return out || null;
+  }catch(e){
+    return null;
+  }
+}
+
 async function init(){
   renderContext(PAGE_CONTEXT);
 
@@ -1009,6 +1030,14 @@ async function init(){
     if(snippet) PAGE_CONTEXT.snippet = snippet;
     if(postUrl) PAGE_CONTEXT.postUrl = postUrl;
     renderContext(PAGE_CONTEXT);
+  }
+
+  if(PAGE_CONTEXT.snippet && isMostlyEnglish(PAGE_CONTEXT.snippet)){
+    const translated = await translateToHebrew(PAGE_CONTEXT.snippet);
+    if(translated){
+      PAGE_CONTEXT.snippet = translated;
+      renderContext(PAGE_CONTEXT);
+    }
   }
 
   await refreshUI(false);
