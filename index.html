@@ -972,22 +972,27 @@ window.addEventListener('pagehide', () => {
 
 /* ---- init ---- */
 
-// Prefer the post-info API as the source of truth once it's available;
-// fall back to the URL query params (post_url/post_snippet) otherwise.
+// The post description lives on the same Firestore doc the reactions are
+// claimed from (torino-social / social-reactions / {document_id}). Read it
+// directly via the Firestore REST API (what the Firebase client SDK uses
+// under the hood) with the project's public web API key; the security
+// rules on torino-social allow reads. Fall back to the URL query params.
+const FIRESTORE_DOC_URL = 'https://firestore.googleapis.com/v1/projects/torino-social/databases/(default)/documents/social-reactions/';
+const FIREBASE_API_KEY = 'AIzaSyCb27ww2YnTDCjzrQw96w39EvyVisPPY9E';
+
 async function fetchPostInfo(){
   if(!documentId) return null;
   try{
-    let res = await fetch(API_BASE + '/post-info?document_id=' + encodeURIComponent(documentId));
-    if(res.status === 405){
-      // Server may expose this as POST instead of GET
-      res = await fetch(API_BASE + '/post-info', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ document_id: documentId })
-      });
-    }
+    const res = await fetch(FIRESTORE_DOC_URL + encodeURIComponent(documentId)
+      + '?key=' + FIREBASE_API_KEY
+      + '&mask.fieldPaths=postDescription&mask.fieldPaths=postUrl');
     if(!res.ok) return null;
-    return await res.json();
+    const doc = await res.json();
+    const f = doc.fields || {};
+    return {
+      postDescription: f.postDescription && f.postDescription.stringValue,
+      postUrl: f.postUrl && f.postUrl.stringValue
+    };
   }catch(e){
     return null;
   }
