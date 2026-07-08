@@ -977,7 +977,15 @@ window.addEventListener('pagehide', () => {
 async function fetchPostInfo(){
   if(!documentId) return null;
   try{
-    const res = await fetch(API_BASE + '/post-info?document_id=' + encodeURIComponent(documentId));
+    let res = await fetch(API_BASE + '/post-info?document_id=' + encodeURIComponent(documentId));
+    if(res.status === 405){
+      // Server may expose this as POST instead of GET
+      res = await fetch(API_BASE + '/post-info', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ document_id: documentId })
+      });
+    }
     if(!res.ok) return null;
     return await res.json();
   }catch(e){
