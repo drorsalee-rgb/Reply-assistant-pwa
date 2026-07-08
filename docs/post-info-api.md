@@ -22,7 +22,9 @@ GET /post-info?document_id=UtFVB84G8Jx7WdnYvaPY
 ```
 
 - `post_url` (string) — canonical post URL, used to trigger the OS-level app handoff after the user posts a reply.
-- `post_snippet` (string) — post text/summary shown to the user.
+- `post_snippet` (string) — post text/summary shown to the user. Source: the `postDescription` field on the Firestore doc (collection `social-reactions`, project `phobos-01`).
+
+The web app also accepts the raw Firestore field names (`postDescription`, `postUrl`) in the response, so returning the document fields as-is works too.
 
 ## Error responses
 

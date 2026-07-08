@@ -998,8 +998,11 @@ async function init(){
 
   const info = await fetchPostInfo();
   if(info){
-    if(info.post_snippet) PAGE_CONTEXT.snippet = info.post_snippet;
-    if(info.post_url) PAGE_CONTEXT.postUrl = info.post_url;
+    // Accept both the spec's snake_case names and the raw Firestore field names
+    const snippet = info.post_snippet || info.postDescription;
+    const postUrl = info.post_url || info.postUrl;
+    if(snippet) PAGE_CONTEXT.snippet = snippet;
+    if(postUrl) PAGE_CONTEXT.postUrl = postUrl;
     renderContext(PAGE_CONTEXT);
   }
 
