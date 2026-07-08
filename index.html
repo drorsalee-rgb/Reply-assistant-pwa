@@ -156,7 +156,11 @@
     font-size:16px;
     letter-spacing:0.02em;
     color:#8aa097;
+    display:flex;
+    align-items:center;
+    gap:8px;
   }
+  .summary-icon svg{ width:17px; height:17px; }
   .context{
     display:flex;
     flex-direction:column;
@@ -271,6 +275,17 @@
   .btn-accept:active{ transform:scale(0.97); }
   .social-icon{ display:inline-flex; }
   .social-icon svg{ width:20px; height:20px; fill:currentColor; }
+  .btn-decline{
+    background:transparent;
+    border:1px solid #3a4d52;
+    color:#8aa097;
+    font-weight:600;
+    font-size:15px;
+    padding:11px 20px;
+    border-radius:14px;
+    transition:transform .15s ease, opacity .2s ease;
+  }
+  .btn-decline:active{ transform:scale(0.97); }
   .btn-accept.done{ background:var(--good); color:#0e1f15; }
   .btn-accept:disabled{ background:#3a4d52; color:#7c9499; pointer-events:none; }
 
@@ -433,7 +448,7 @@
   </div>
 
   <div class="context-wrap" id="contextWrap">
-    <p class="section-label">תקציר הפוסט</p>
+    <p class="section-label"><span>תקציר הפוסט</span><span class="social-icon summary-icon" id="summaryIcon" hidden></span></p>
     <div class="context" id="context">
       <span class="snippet">טוען פרטי הפוסט…</span>
     </div>
@@ -467,6 +482,7 @@
       <span id="acceptLabel">העתק ופתח</span>
     </button>
     <p class="hint">הדבק תגובה אחרי פתיחה</p>
+    <button class="btn-decline" id="declineBtn">לא, תודה</button>
   </div>
 </div>
 
@@ -577,6 +593,8 @@ const els = {
   forUser: document.getElementById('forUser'),
   acceptBtn: document.getElementById('acceptBtn'),
   socialIcon: document.getElementById('socialIcon'),
+  summaryIcon: document.getElementById('summaryIcon'),
+  declineBtn: document.getElementById('declineBtn'),
   acceptLabel: document.getElementById('acceptLabel'),
   prevBtn: document.getElementById('prevBtn'),
   nextBtn: document.getElementById('nextBtn'),
@@ -967,6 +985,22 @@ els.acceptBtn.addEventListener('click', async () => {
   }
 });
 
+// The user declines to reply altogether: release every claimed reaction
+// (including the one on screen) back to the pool and show a farewell state.
+els.declineBtn.addEventListener('click', () => {
+  returnUnused(null);
+  cleanedUp = true;
+  queue = [];
+  queueIndex = -1;
+  els.forUser.textContent = '';
+  els.quoteText.innerHTML = '<span class="snippet">בסדר גמור. אפשר לסגור את החלון.</span>';
+  els.acceptBtn.disabled = true;
+  els.prevBtn.disabled = true;
+  els.nextBtn.disabled = true;
+  els.declineBtn.disabled = true;
+  els.declineBtn.textContent = 'התגובות שוחררו ✓';
+});
+
 // Best-effort: release any claimed-but-unused reactions if the user leaves
 // without posting (closing the tab/app, or navigating away another way).
 window.addEventListener('pagehide', () => {
@@ -1032,9 +1066,10 @@ function detectSocialNetwork(name, url){
 
 function renderSocialIcon(){
   const network = detectSocialNetwork(PAGE_CONTEXT.socialMedia, PAGE_CONTEXT.postUrl);
-  if(!network){ els.socialIcon.hidden = true; return; }
-  els.socialIcon.innerHTML = '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="' + SOCIAL_ICONS[network] + '"/></svg>';
-  els.socialIcon.hidden = false;
+  const targets = [els.socialIcon, els.summaryIcon];
+  if(!network){ targets.forEach(el => { el.hidden = true; }); return; }
+  const svg = '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="' + SOCIAL_ICONS[network] + '"/></svg>';
+  targets.forEach(el => { el.innerHTML = svg; el.hidden = false; });
 }
 
 // Stored descriptions are sometimes English; the audience reads Hebrew.
