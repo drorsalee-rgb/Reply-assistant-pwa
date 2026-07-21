@@ -237,11 +237,15 @@
     margin:0;
     flex:1;
     display:flex;
-    align-items:center;
+    flex-direction:column;
     overflow-y:auto;
     padding:24px 22px;
     color:#eaf6f8;
   }
+  /* Center short text vertically without clipping long text: auto-margin
+     spacers collapse to zero when the content overflows, so scrolling
+     always starts at the first line. */
+  .quote-text::before, .quote-text::after{ content:''; margin:auto; }
   .quote-text.placeholder{
     color:#7ea3aa;
     font-style:italic;
