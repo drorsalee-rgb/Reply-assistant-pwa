@@ -290,6 +290,13 @@
     transition:transform .15s ease, opacity .2s ease;
   }
   .btn-decline:active{ transform:scale(0.97); }
+  /* Short screens: tighten spacing so the full layout fits */
+  @media (max-height: 700px){
+    .screen{ padding:12px 16px; gap:10px; }
+    .card-wrap{ min-height:190px; }
+    .btn-accept{ padding:13px 20px; }
+    .btn-decline{ padding:9px 20px; }
+  }
   .btn-accept.done{ background:var(--good); color:#0e1f15; }
   .btn-accept:disabled{ background:#3a4d52; color:#7c9499; pointer-events:none; }
 
@@ -618,6 +625,20 @@ const els = {
 /* ---- resizable post-description box ---- */
 
 const CONTEXT_HEIGHT_KEY = 'contextBoxHeight';
+// On short screens (e.g. iPhone SE/8-size viewports), shrink the description
+// box until the whole layout — including the decline button — fits without
+// scrolling. Runs after load and on viewport changes.
+function fitContextHeight(){
+  const screenEl = document.querySelector('.screen');
+  if(!screenEl) return;
+  const overflow = screenEl.scrollHeight - screenEl.clientHeight;
+  if(overflow > 0){
+    const cur = els.contextWrap.getBoundingClientRect().height;
+    applyContextHeight(cur - overflow);
+  }
+}
+window.addEventListener('resize', () => fitContextHeight());
+
 const CONTEXT_MIN_H = 70;
 const CONTEXT_MAX_H = 320;
 const CONTEXT_DEFAULT_H = 260;
@@ -1121,6 +1142,7 @@ async function init(){
   }
 
   await refreshUI(false);
+  fitContextHeight();
 }
 init();
 
