@@ -1,0 +1,47 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  html,body{margin:0;padding:0;width:375px;height:812px;overflow:hidden;background:#0a1e25;}
+  iframe{border:0;width:375px;height:812px;display:block;}
+  .badge{
+    position:absolute;
+    width:34px;height:34px;border-radius:50%;
+    background:#ff9f1c;color:#1c2620;
+    font:800 20px/34px -apple-system,Arial,sans-serif;text-align:center;
+    box-shadow:0 2px 8px rgba(0,0,0,.6), 0 0 0 3px rgba(255,159,28,.35);
+    z-index:10;
+  }
+  .frame{
+    position:absolute;border:3px solid #ff9f1c;border-radius:14px;z-index:9;
+    box-shadow:0 0 0 2000px rgba(0,0,0,0);
+  }
+</style>
+</head>
+<body>
+<script>
+  document.cookie = 'style=' + encodeURIComponent(JSON.stringify({gender:'male', tone:'formal'})) + ';max-age=63072000;path=/';
+  document.write('<iframe src="index.html?document_id=I7iP9eviU22W6X3fuXhC"></iframe>');
+</script>
+<!-- 1: style bar -->
+<div class="frame" style="left:17px;top:17px;width:335px;height:69px;"></div>
+<div class="badge" style="left:2px;top:35px;">1</div>
+<!-- 2: post summary -->
+<div class="frame" style="left:17px;top:100px;width:335px;height:263px;"></div>
+<div class="badge" style="left:2px;top:215px;">2</div>
+<!-- 3: prev/next arrows (highlight both) -->
+<div class="frame" style="left:32px;top:407px;width:40px;height:40px;border-radius:50%;"></div>
+<div class="frame" style="left:303px;top:407px;width:40px;height:40px;border-radius:50%;"></div>
+<div class="badge" style="left:2px;top:380px;">3</div>
+<!-- 4: suggestion text -->
+<div class="frame" style="left:18px;top:454px;width:336px;height:184px;"></div>
+<div class="badge" style="left:2px;top:535px;">4</div>
+<!-- 5: accept button -->
+<div class="frame" style="left:17px;top:650px;width:335px;height:62px;"></div>
+<div class="badge" style="left:2px;top:664px;">5</div>
+<!-- 6: decline button -->
+<div class="frame" style="left:17px;top:745px;width:335px;height:50px;"></div>
+<div class="badge" style="left:2px;top:753px;">6</div>
+</body>
+</html>
