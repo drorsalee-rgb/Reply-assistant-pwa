@@ -583,6 +583,35 @@ const PAGE_CONTEXT = {
 };
 
 
+// ---- usage counters ----
+// Aggregate only: no cookies, no ids, no personal data — a random per-tab
+// string just prevents one visit being counted as several opens. Fire and
+// forget; failures must never affect the app.
+const EVENTS_URL = 'https://pwa-events-658282975646.europe-west1.run.app/e';
+
+const sessionToken = (() => {
+  try{
+    let t = sessionStorage.getItem('sid');
+    if(!t){
+      t = Math.random().toString(36).slice(2) + Date.now().toString(36);
+      sessionStorage.setItem('sid', t);
+    }
+    return t;
+  }catch(e){ return ''; }
+})();
+
+function track(event){
+  if(!documentId) return;
+  try{
+    const payload = JSON.stringify({ event, document_id: documentId, session: sessionToken });
+    if(navigator.sendBeacon){
+      navigator.sendBeacon(EVENTS_URL, new Blob([payload], { type: 'text/plain' }));
+    } else {
+      fetch(EVENTS_URL, { method: 'POST', body: payload, keepalive: true }).catch(() => {});
+    }
+  }catch(e){}
+}
+
 function getStyle(){
   const match = document.cookie.match(/(?:^|;\s*)style=([^;]+)/);
   if(!match) return null;
@@ -995,6 +1024,7 @@ els.panelSaveBtn.addEventListener('click', async () => {
   const staleReactionArrayName = currentStyle ? reactionArrayNameFor(currentStyle) : null;
   currentStyle = { gender, tone };
   setStyle(currentStyle);
+  track('style_selected');
   closePanel();
   await refreshUI(true, staleReactionArrayName);
 });
@@ -1042,6 +1072,7 @@ els.acceptBtn.addEventListener('click', async () => {
   }
   els.acceptBtn.classList.add('done');
   els.acceptLabel.textContent = 'הועתק ✓';
+  track('copy_open');
 
   // Release the other claimed-but-unused reactions back to the pool; the
   // accepted one stays claimed since it's the one actually being posted.
@@ -1062,6 +1093,7 @@ els.acceptBtn.addEventListener('click', async () => {
 // The user declines to reply altogether: release every claimed reaction
 // (including the one on screen) back to the pool and show a farewell state.
 els.declineBtn.addEventListener('click', () => {
+  track('decline');
   stopExhaustedRetry();
   returnUnused(null);
   cleanedUp = true;
@@ -1192,6 +1224,7 @@ async function init(){
     }
   }
 
+  track('open');
   await refreshUI(false);
   fitContextHeight();
 }
