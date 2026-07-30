@@ -728,38 +728,26 @@ function renderContext(ctx){
 
 // ---- claim-social-reactions API ----
 
+// Single claim attempt; retrying on an empty pool is handled by the
+// exhausted-retry loop below (every 5s for up to a minute), which also
+// covers reactions freed by other users tapping "לא, תודה".
 async function claimReactions(){
   if(!documentId || !currentStyle) return false;
   const reaction_array_name = reactionArrayNameFor(currentStyle);
-  let attempts = 0;
-  while(attempts < 5){
-    let res;
-    try{
-      res = await fetch(API_BASE + '/', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ document_id: documentId, reaction_array_name })
-      });
-    }catch(e){
-      return false; // network error — do not auto-retry
-    }
-    if(res.status === 200){
-      const data = await res.json();
-      queue.push(...(data.claimedReactions || []));
-      return true;
-    }
-    if(res.status === 503){
-      const data = await res.json().catch(() => ({}));
-      if(data.code === 'reaction_pool_empty'){
-        attempts += 1;
-        await new Promise(r => setTimeout(r, 1200 * attempts));
-        continue;
-      }
-      return false;
-    }
-    return false; // 404 (exhausted) or other errors — stop, don't poll
+  let res;
+  try{
+    res = await fetch(API_BASE + '/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ document_id: documentId, reaction_array_name })
+    });
+  }catch(e){
+    return false;
   }
-  return false;
+  if(res.status !== 200) return false;
+  const data = await res.json();
+  queue.push(...(data.claimedReactions || []));
+  return true;
 }
 
 function returnUnused(excludeId, reactionArrayNameOverride){
@@ -778,14 +766,46 @@ function returnUnused(excludeId, reactionArrayNameOverride){
   }catch(e){}
 }
 
+// When the pool is empty, keep retrying every 5 seconds for up to a minute —
+// suggestions free up when other users decline or leave.
+const EXHAUSTED_RETRY_MS = 5000;
+const EXHAUSTED_RETRY_MAX = 12;
+let exhaustedRetryTimer = null;
+let exhaustedRetryCount = 0;
+
+function stopExhaustedRetry(){
+  if(exhaustedRetryTimer){ clearTimeout(exhaustedRetryTimer); exhaustedRetryTimer = null; }
+}
+
+function scheduleExhaustedRetry(){
+  stopExhaustedRetry();
+  exhaustedRetryTimer = setTimeout(async () => {
+    exhaustedRetryTimer = null;
+    if(!exhausted) return; // user navigated away from the empty state
+    exhaustedRetryCount += 1;
+    const ok = await claimReactions();
+    if(!exhausted) return;
+    if(ok && queueIndex + 1 < queue.length){
+      exhausted = false;
+      goNext(false);
+    } else if(exhaustedRetryCount < EXHAUSTED_RETRY_MAX){
+      scheduleExhaustedRetry();
+    } else {
+      els.quoteText.textContent = 'אין כרגע הצעות פנויות. נסו שוב מאוחר יותר.';
+    }
+  }, EXHAUSTED_RETRY_MS);
+}
+
 function showExhausted(){
   exhausted = true;
   els.quoteText.classList.add('placeholder');
-  els.quoteText.textContent = 'אין כרגע הצעות פנויות. נסו שוב מאוחר יותר.';
+  els.quoteText.textContent = 'אין כרגע הצעות פנויות. ממשיכים לנסות…';
   els.forUser.textContent = '—';
   els.acceptBtn.disabled = true;
   els.nextBtn.disabled = true;
   els.prevBtn.disabled = queueIndex <= 0;
+  exhaustedRetryCount = 0;
+  scheduleExhaustedRetry();
 }
 
 async function goNext(animate){
@@ -856,6 +876,7 @@ async function goPrev(animate){
     requestAnimationFrame(() => els.card.classList.remove('swap-in'));
   }
 
+  stopExhaustedRetry();
   exhausted = false; // moving back makes "next" available again
   els.acceptBtn.disabled = false;
   els.prevBtn.disabled = queueIndex <= 0;
@@ -864,6 +885,7 @@ async function goPrev(animate){
 
 async function loadInitial(animate, staleReactionArrayName){
   if(queue.length) returnUnused(null, staleReactionArrayName);
+  stopExhaustedRetry();
   queue = [];
   queueIndex = -1;
   exhausted = false;
@@ -1013,6 +1035,7 @@ els.acceptBtn.addEventListener('click', async () => {
 // The user declines to reply altogether: release every claimed reaction
 // (including the one on screen) back to the pool and show a farewell state.
 els.declineBtn.addEventListener('click', () => {
+  stopExhaustedRetry();
   returnUnused(null);
   cleanedUp = true;
   queue = [];
@@ -1029,6 +1052,7 @@ els.declineBtn.addEventListener('click', () => {
 // Best-effort: release any claimed-but-unused reactions if the user leaves
 // without posting (closing the tab/app, or navigating away another way).
 window.addEventListener('pagehide', () => {
+  stopExhaustedRetry();
   if(cleanedUp) return;
   cleanedUp = true;
   returnUnused(null);
