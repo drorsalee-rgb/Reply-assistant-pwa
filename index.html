@@ -103,6 +103,13 @@
     display:flex;align-items:center;justify-content:center;
     transition:background .15s ease, transform .15s ease;
   }
+  /* Before a style is chosen the whole bar is the tap target */
+  .style-bar.clickable{
+    cursor:pointer;
+    border-color:rgba(40,194,224,0.45);
+    background:rgba(40,194,224,0.08);
+  }
+  .style-bar.clickable:active{ transform:scale(0.99); background:rgba(40,194,224,0.14); }
   .edit-btn:active{ transform:scale(0.92); background:rgba(255,255,255,0.16); }
   .edit-btn svg{ width:16px;height:16px; color:var(--gold); }
 
@@ -595,6 +602,7 @@ function reactionArrayNameFor(style){
 }
 
 const els = {
+  styleBar: document.getElementById('styleBar'),
   styleValue: document.getElementById('styleValue'),
   editStyleBtn: document.getElementById('editStyleBtn'),
   banner: document.getElementById('banner'),
@@ -701,10 +709,18 @@ function renderStyleBar(){
     els.styleValue.textContent = `${GENDER_LABEL[currentStyle.gender]} · ${TONE_LABEL[currentStyle.tone]}`;
     els.styleValue.classList.remove('empty');
     els.banner.classList.remove('show');
+    // Style already chosen: only the pencil opens editing.
+    els.styleBar.classList.remove('clickable');
+    els.styleBar.removeAttribute('role');
+    els.styleBar.removeAttribute('tabindex');
   } else {
-    els.styleValue.textContent = 'לא נבחר';
+    els.styleValue.textContent = 'בחר/י סגנון';
     els.styleValue.classList.add('empty');
     els.banner.classList.add('show');
+    // First visit: the whole bar is one big tap target.
+    els.styleBar.classList.add('clickable');
+    els.styleBar.setAttribute('role', 'button');
+    els.styleBar.setAttribute('tabindex', '0');
   }
 }
 
@@ -959,6 +975,17 @@ function closePanel(){ els.panel.classList.remove('open'); closeAllDropdowns(nul
 
 els.editStyleBtn.addEventListener('click', openPanel);
 els.banner.addEventListener('click', openPanel);
+// Before a style is chosen, tapping anywhere on the style bar opens the
+// picker; once one is set, editing goes through the pencil only.
+els.styleBar.addEventListener('click', e => {
+  if(currentStyle) return;
+  if(e.target.closest('#editStyleBtn')) return; // the pencil handles itself
+  openPanel();
+});
+els.styleBar.addEventListener('keydown', e => {
+  if(currentStyle) return;
+  if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); openPanel(); }
+});
 els.backBtn.addEventListener('click', closePanel);
 
 els.panelSaveBtn.addEventListener('click', async () => {
