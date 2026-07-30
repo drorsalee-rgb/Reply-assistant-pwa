@@ -305,6 +305,13 @@
     color:#8aa097;
   }
   .tally b{ color:var(--gold); font-size:15.5px; font-weight:800; }
+  .tally.pop{ animation:tallyPop .65s cubic-bezier(.2,.9,.3,1.4); }
+  @keyframes tallyPop{
+    0%{ transform:scale(1); }
+    35%{ transform:scale(1.18); color:var(--gold); }
+    100%{ transform:scale(1); }
+  }
+  .hint a{ color:var(--gold); text-decoration:underline; font-weight:700; }
   /* Short screens: tighten spacing so the full layout fits */
   @media (max-height: 700px){
     .screen{ padding:12px 16px; gap:10px; }
@@ -507,7 +514,7 @@
       <span class="social-icon" id="socialIcon" hidden></span>
       <span id="acceptLabel">העתק ופתח</span>
     </button>
-    <p class="hint">הדבק תגובה אחרי פתיחה</p>
+    <p class="hint" id="hint">הדבק תגובה אחרי פתיחה</p>
     <p class="tally" id="tally" hidden></p>
     <button class="btn-decline" id="declineBtn">לא, תודה</button>
   </div>
@@ -625,6 +632,8 @@ function track(event){
 // A step-counter style reward: how many replies this device has published.
 // Lives only in localStorage — never sent anywhere, never leaves the phone.
 const TALLY_KEY = 'copyTally';
+// How long the tally bump stays on screen before handing off to the post.
+const TALLY_PAUSE_MS = 650;
 
 function readTally(){
   try{
@@ -688,6 +697,7 @@ const els = {
   acceptBtn: document.getElementById('acceptBtn'),
   socialIcon: document.getElementById('socialIcon'),
   tally: document.getElementById('tally'),
+  hint: document.getElementById('hint'),
   summaryIcon: document.getElementById('summaryIcon'),
   declineBtn: document.getElementById('declineBtn'),
   acceptLabel: document.getElementById('acceptLabel'),
@@ -1122,20 +1132,32 @@ els.acceptBtn.addEventListener('click', async () => {
   track('copy_open');
   bumpTally();
   renderTally();
+  els.tally.classList.remove('pop');
+  void els.tally.offsetWidth;   // restart the animation
+  els.tally.classList.add('pop');
 
   // Release the other claimed-but-unused reactions back to the pool; the
   // accepted one stays claimed since it's the one actually being posted.
   returnUnused(usedItem ? usedItem.id : null);
   cleanedUp = true;
 
-  // Navigate to the real post URL right away, in the same user gesture.
-  // No device/app detection needed: if the platform's app is installed and
-  // registered for Universal Links (iOS) / App Links (Android), the OS
-  // opens the app directly; otherwise it falls through to the browser.
-  // This must NOT be wrapped in setTimeout — delaying it can break iOS's
-  // requirement that the navigation stay tied to the user's tap.
+  // Hand off to the real post. If the platform's app is installed and
+  // registered for Universal Links (iOS) / App Links (Android), the OS opens
+  // it directly; otherwise the browser follows the link.
+  //
+  // The short pause lets the tally bump register before the screen changes.
+  // It is deliberately brief: iOS ties the app handoff to the user's tap, so
+  // a long delay risks landing in the browser instead of the app — and if
+  // the navigation is blocked entirely, the fallback link below gives the
+  // user a second, gesture-backed way to open the post.
   if(PAGE_CONTEXT.postUrl){
-    window.location.href = PAGE_CONTEXT.postUrl;
+    const url = PAGE_CONTEXT.postUrl;
+    setTimeout(() => { window.location.href = url; }, TALLY_PAUSE_MS);
+    setTimeout(() => {
+      if(document.visibilityState === 'visible'){
+        els.hint.innerHTML = `<a href="${url}">פתח/י את הפוסט</a> והדבק/י את התגובה`;
+      }
+    }, TALLY_PAUSE_MS + 1600);
   }
 });
 
