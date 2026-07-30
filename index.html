@@ -297,6 +297,14 @@
     transition:transform .15s ease, opacity .2s ease;
   }
   .btn-decline:active{ transform:scale(0.97); }
+  /* Personal, device-local tally of published replies */
+  .tally{
+    margin:0;
+    text-align:center;
+    font-size:13.5px;
+    color:#8aa097;
+  }
+  .tally b{ color:var(--gold); font-size:15.5px; font-weight:800; }
   /* Short screens: tighten spacing so the full layout fits */
   @media (max-height: 700px){
     .screen{ padding:12px 16px; gap:10px; }
@@ -500,6 +508,7 @@
       <span id="acceptLabel">העתק ופתח</span>
     </button>
     <p class="hint">הדבק תגובה אחרי פתיחה</p>
+    <p class="tally" id="tally" hidden></p>
     <button class="btn-decline" id="declineBtn">לא, תודה</button>
   </div>
 </div>
@@ -612,6 +621,43 @@ function track(event){
   }catch(e){}
 }
 
+// ---- personal tally ----
+// A step-counter style reward: how many replies this device has published.
+// Lives only in localStorage — never sent anywhere, never leaves the phone.
+const TALLY_KEY = 'copyTally';
+
+function readTally(){
+  try{
+    const raw = localStorage.getItem(TALLY_KEY);
+    if(!raw) return { total: 0, ts: [] };
+    const parsed = JSON.parse(raw);
+    return { total: parsed.total || 0, ts: Array.isArray(parsed.ts) ? parsed.ts : [] };
+  }catch(e){ return { total: 0, ts: [] }; }
+}
+
+function bumpTally(){
+  const tally = readTally();
+  tally.total += 1;
+  tally.ts.push(Date.now());
+  tally.ts = tally.ts.slice(-60); // only recent timestamps are needed
+  try{ localStorage.setItem(TALLY_KEY, JSON.stringify(tally)); }catch(e){}
+  return tally;
+}
+
+function renderTally(){
+  const { total, ts } = readTally();
+  if(!total){ els.tally.hidden = true; return; }
+  const week = ts.filter(t => t >= Date.now() - 7 * 24 * 3600 * 1000).length;
+  const milestone = total % 10 === 0;
+  const noun = total === 1 ? 'תגובה אחת' : `<b>${total}</b> תגובות`;
+  let text = `${milestone ? '🎉' : '🔥'} פרסמת ${noun} מהמכשיר הזה`;
+  if(week > 0 && week < total) text += ` · <b>${week}</b> השבוע`;
+  els.tally.innerHTML = text;
+  const wasHidden = els.tally.hidden;
+  els.tally.hidden = false;
+  if(wasHidden) fitContextHeight(); // the extra line must not push buttons off-screen
+}
+
 function getStyle(){
   const match = document.cookie.match(/(?:^|;\s*)style=([^;]+)/);
   if(!match) return null;
@@ -641,6 +687,7 @@ const els = {
   forUser: document.getElementById('forUser'),
   acceptBtn: document.getElementById('acceptBtn'),
   socialIcon: document.getElementById('socialIcon'),
+  tally: document.getElementById('tally'),
   summaryIcon: document.getElementById('summaryIcon'),
   declineBtn: document.getElementById('declineBtn'),
   acceptLabel: document.getElementById('acceptLabel'),
@@ -1073,6 +1120,8 @@ els.acceptBtn.addEventListener('click', async () => {
   els.acceptBtn.classList.add('done');
   els.acceptLabel.textContent = 'הועתק ✓';
   track('copy_open');
+  bumpTally();
+  renderTally();
 
   // Release the other claimed-but-unused reactions back to the pool; the
   // accepted one stays claimed since it's the one actually being posted.
@@ -1225,6 +1274,7 @@ async function init(){
   }
 
   track('open');
+  renderTally();
   await refreshUI(false);
   fitContextHeight();
 }
