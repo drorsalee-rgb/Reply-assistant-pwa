@@ -1258,13 +1258,38 @@ function detectSocialNetwork(name, url){
 // fall back to the handle embedded in the post URL where the network puts
 // one there (X, TikTok, YouTube). Facebook share links and X's /i/status/
 // form carry no handle — then we simply show nothing.
+// Path segments that are part of the site's plumbing, never an account name.
+const NON_AUTHOR_SEGMENTS = new Set([
+  'share', 'groups', 'watch', 'reel', 'reels', 'p', 'tv', 'stories', 'story',
+  'photo', 'photos', 'video', 'videos', 'media', 'pages', 'events', 'explore',
+  'hashtag', 'marketplace', 'search', 'i', 'home', 'intent', 'notifications'
+]);
+
 function deriveAuthor(url){
-  let path;
-  try{ path = new URL(url).pathname; }catch(e){ return null; }
-  let m = path.match(/^\/(@[^/]+)/);                       // tiktok, youtube
-  if(m) return m[1];
-  m = path.match(/^\/([^/]+)\/status(?:es)?\/\d+/);        // x / twitter
-  if(m && m[1] !== 'i') return '@' + m[1];
+  let parsed;
+  try{ parsed = new URL(url); }catch(e){ return null; }
+  const host = parsed.hostname.replace(/^www\./, '').toLowerCase();
+  const segments = parsed.pathname.split('/').filter(Boolean);
+  if(!segments.length) return null;
+
+  let first;
+  try{ first = decodeURIComponent(segments[0]); }catch(e){ first = segments[0]; }
+  const second = (segments[1] || '').toLowerCase();
+  const handle = name => '@' + name.replace(/^@/, '');
+
+  if(first.startsWith('@')) return first;                       // tiktok, youtube, threads
+  if(NON_AUTHOR_SEGMENTS.has(first.toLowerCase()) || first.includes('.php')) return null;
+
+  if(/(^|\.)(x|twitter)\.com$/.test(host)){
+    return (second === 'status' || second === 'statuses') ? handle(first) : null;
+  }
+  if(/(^|\.)(facebook\.com|fb\.com|fb\.watch)$/.test(host)){
+    // facebook.com/{page}/videos|posts|photos/...
+    return ['videos', 'posts', 'photos', 'video', 'reels'].includes(second) ? handle(first) : null;
+  }
+  if(/(^|\.)instagram\.com$/.test(host)){
+    return ['p', 'reel', 'reels', 'tv'].includes(second) ? handle(first) : null;
+  }
   return null;
 }
 
