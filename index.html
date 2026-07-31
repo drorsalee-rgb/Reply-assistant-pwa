@@ -168,6 +168,14 @@
     gap:8px;
   }
   .summary-icon svg{ width:17px; height:17px; }
+  .section-label .author{
+    font-family:'Noto Sans Hebrew','Inter',sans-serif;
+    font-size:15px;
+    color:#a9c0b6;
+    font-weight:600;
+    direction:ltr;
+    unicode-bidi:isolate;
+  }
   .context{
     display:flex;
     flex-direction:column;
@@ -481,7 +489,7 @@
   </div>
 
   <div class="context-wrap" id="contextWrap">
-    <p class="section-label"><span>תקציר הפוסט</span><span class="social-icon summary-icon" id="summaryIcon" hidden></span></p>
+    <p class="section-label"><span>תקציר הפוסט</span><span class="social-icon summary-icon" id="summaryIcon" hidden></span><span class="author" id="postAuthor" hidden></span></p>
     <div class="context" id="context">
       <span class="snippet">טוען פרטי הפוסט…</span>
     </div>
@@ -699,6 +707,7 @@ const els = {
   tally: document.getElementById('tally'),
   hint: document.getElementById('hint'),
   summaryIcon: document.getElementById('summaryIcon'),
+  postAuthor: document.getElementById('postAuthor'),
   declineBtn: document.getElementById('declineBtn'),
   acceptLabel: document.getElementById('acceptLabel'),
   prevBtn: document.getElementById('prevBtn'),
@@ -1203,14 +1212,16 @@ async function fetchPostInfo(){
   try{
     const res = await fetch(FIRESTORE_DOC_URL + encodeURIComponent(documentId)
       + '?key=' + FIREBASE_API_KEY
-      + '&mask.fieldPaths=postDescription&mask.fieldPaths=postUrl&mask.fieldPaths=socialMedia');
+      + '&mask.fieldPaths=postDescription&mask.fieldPaths=postUrl&mask.fieldPaths=socialMedia'
+      + '&mask.fieldPaths=author&mask.fieldPaths=authorName');
     if(!res.ok) return null;
     const doc = await res.json();
     const f = doc.fields || {};
     return {
       postDescription: f.postDescription && f.postDescription.stringValue,
       postUrl: f.postUrl && f.postUrl.stringValue,
-      socialMedia: f.socialMedia && f.socialMedia.stringValue
+      socialMedia: f.socialMedia && f.socialMedia.stringValue,
+      author: (f.author && f.author.stringValue) || (f.authorName && f.authorName.stringValue)
     };
   }catch(e){
     return null;
@@ -1241,6 +1252,27 @@ function detectSocialNetwork(name, url){
   if(/(^|\.)tiktok\.com$/.test(host)) return 'tiktok';
   if(/(^|\.)(youtube\.com|youtu\.be)$/.test(host)) return 'youtube';
   return null;
+}
+
+// Who published the post. The Firestore doc has no author field yet, so
+// fall back to the handle embedded in the post URL where the network puts
+// one there (X, TikTok, YouTube). Facebook share links and X's /i/status/
+// form carry no handle — then we simply show nothing.
+function deriveAuthor(url){
+  let path;
+  try{ path = new URL(url).pathname; }catch(e){ return null; }
+  let m = path.match(/^\/(@[^/]+)/);                       // tiktok, youtube
+  if(m) return m[1];
+  m = path.match(/^\/([^/]+)\/status(?:es)?\/\d+/);        // x / twitter
+  if(m && m[1] !== 'i') return '@' + m[1];
+  return null;
+}
+
+function renderAuthor(){
+  const author = PAGE_CONTEXT.author || deriveAuthor(PAGE_CONTEXT.postUrl || '');
+  if(!author){ els.postAuthor.hidden = true; return; }
+  els.postAuthor.textContent = author;
+  els.postAuthor.hidden = false;
 }
 
 function renderSocialIcon(){
@@ -1283,9 +1315,11 @@ async function init(){
     if(snippet) PAGE_CONTEXT.snippet = snippet;
     if(postUrl) PAGE_CONTEXT.postUrl = postUrl;
     if(info.socialMedia) PAGE_CONTEXT.socialMedia = info.socialMedia;
+    if(info.author) PAGE_CONTEXT.author = info.author;
     renderContext(PAGE_CONTEXT);
   }
   renderSocialIcon();
+  renderAuthor();
 
   if(PAGE_CONTEXT.snippet && isMostlyEnglish(PAGE_CONTEXT.snippet)){
     const translated = await translateToHebrew(PAGE_CONTEXT.snippet);
