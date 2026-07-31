@@ -1,6 +1,21 @@
 """Formats the usage report. Reads two JSON blobs (broadcast-log, pwa-stats)
 separated by a marker line on stdin; called by stats.sh."""
 import sys, json
+from datetime import datetime, timezone, timedelta
+
+try:
+    from zoneinfo import ZoneInfo
+    LOCAL_TZ = ZoneInfo('Asia/Jerusalem')
+except Exception:                       # no tz database available
+    LOCAL_TZ = timezone(timedelta(hours=3))
+
+
+def to_local(ts):
+    """'2026-07-31T11:41:40.123Z' (UTC) -> '2026-07-31 14:41' (Israel)."""
+    if not ts:
+        return ''
+    dt = datetime.strptime(ts[:19], '%Y-%m-%dT%H:%M:%S').replace(tzinfo=timezone.utc)
+    return dt.astimezone(LOCAL_TZ).strftime('%Y-%m-%d %H:%M')
 
 # When the service started counting distinct people per press (UTC).
 PEOPLE_COUNTING_FROM = '2026-07-31 14:34'
@@ -19,7 +34,7 @@ stats = {}
 for d in stats_docs:
     stats[d['name'].split('/')[-1]] = {k: scalar(v) for k, v in d.get('fields', {}).items()}
 
-header = (f"{'when':<17}{'channel':<20}{'people':>7}{'pressed':>8}"
+header = (f"{'when (IL)':<17}{'channel':<20}{'people':>7}{'pressed':>8}"
           f"{'rate':>7}  {'opens':>6}{'presses':>8}{'style':>7}{'declines':>9}")
 print(header)
 print('-' * len(header))
@@ -30,7 +45,8 @@ for row in broadcasts:
         continue
     f = doc['fields']
     doc_id = f.get('documentId', {}).get('stringValue', '')
-    when = f.get('at', {}).get('timestampValue', '')[:16].replace('T', ' ')
+    when_utc = f.get('at', {}).get('timestampValue', '')[:16].replace('T', ' ')
+    when = to_local(f.get('at', {}).get('timestampValue', ''))
     channel = f.get('providerId', {}).get('stringValue', '')[:19]
     s = stats.get(doc_id, {})
     people = s.get('uniqueOpens', 0)
@@ -41,7 +57,7 @@ for row in broadcasts:
     # broadcast before then have, at best, partial per-person data (only the
     # stragglers who pressed later), so show their raw press count flagged
     # with '*' rather than a number that looks precise and isn't.
-    if when >= PEOPLE_COUNTING_FROM:
+    if when_utc >= PEOPLE_COUNTING_FROM:
         pressed, flag = unique_presses, ''
     else:
         pressed, flag = raw_presses, '*'
@@ -55,6 +71,6 @@ print()
 print('people  = distinct people who opened the post    pressed = distinct people who pressed העתק ופתח')
 print('rate    = pressed / people — the conversion that matters')
 print('opens / presses = raw totals, including repeat visits and repeat presses by the same person')
-print('*       = per-person press counting started 31/07 14:34 UTC; older rows show raw presses,')
+print('*       = per-person press counting started 31/07 17:34 (IL); older rows show raw presses,')
 print('          so the same person pressing twice inflates them (rate can exceed 100%).')
 print('Recipient count is unknown — messages are also forwarded to WhatsApp manually.')
