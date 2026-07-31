@@ -613,15 +613,22 @@ const PAGE_CONTEXT = {
 // forget; failures must never affect the app.
 const EVENTS_URL = 'https://pwa-events-658282975646.europe-west1.run.app/e';
 
+// Anonymous, random, device-local id — not tied to any person or phone
+// number. It exists so the counters can say "how many people" instead of
+// "how many taps"; the same device opening a post twice counts once.
 const sessionToken = (() => {
+  const fresh = () => Math.random().toString(36).slice(2) + Date.now().toString(36);
   try{
-    let t = sessionStorage.getItem('sid');
-    if(!t){
-      t = Math.random().toString(36).slice(2) + Date.now().toString(36);
-      sessionStorage.setItem('sid', t);
-    }
+    let t = localStorage.getItem('vid');
+    if(!t){ t = fresh(); localStorage.setItem('vid', t); }
     return t;
-  }catch(e){ return ''; }
+  }catch(e){
+    try{
+      let t = sessionStorage.getItem('vid');
+      if(!t){ t = fresh(); sessionStorage.setItem('vid', t); }
+      return t;
+    }catch(e2){ return ''; }
+  }
 })();
 
 function track(event){

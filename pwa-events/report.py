@@ -16,8 +16,8 @@ stats = {}
 for d in stats_docs:
     stats[d['name'].split('/')[-1]] = {k: scalar(v) for k, v in d.get('fields', {}).items()}
 
-header = (f"{'when':<17}{'channel':<20}{'opens':>7}{'uniq':>6}"
-          f"{'style':>7}{'copy':>6}{'decline':>8}  rate")
+header = (f"{'when':<17}{'channel':<20}{'people':>7}{'pressed':>8}"
+          f"{'rate':>6}   {'opens':>6}{'presses':>8}{'style':>7}{'declines':>9}")
 print(header)
 print('-' * len(header))
 
@@ -30,13 +30,15 @@ for row in broadcasts:
     when = f.get('at', {}).get('timestampValue', '')[:16].replace('T', ' ')
     channel = f.get('providerId', {}).get('stringValue', '')[:19]
     s = stats.get(doc_id, {})
-    opens = s.get('opens', 0)
-    uniq = s.get('uniqueOpens', 0)
-    copy = s.get('copyOpen', 0)
-    rate = f'{copy / uniq * 100:.0f}%' if uniq else '-'
-    print(f"{when:<17}{channel:<20}{opens:>7}{uniq:>6}"
-          f"{s.get('styleSelected', 0):>7}{copy:>6}{s.get('declines', 0):>8}  {rate}")
+    people = s.get('uniqueOpens', 0)
+    pressed = s.get('uniqueCopyOpen', 0)
+    rate = f'{pressed / people * 100:.0f}%' if people else '-'
+    print(f"{when:<17}{channel:<20}{people:>7}{pressed:>8}{rate:>6}   "
+          f"{s.get('opens', 0):>6}{s.get('copyOpen', 0):>8}"
+          f"{s.get('styleSelected', 0):>7}{s.get('declines', 0):>9}")
 
 print()
-print('opens = link taps (incl. reloads) | uniq = distinct visits | copy = pressed העתק ופתח')
-print('rate  = copy / uniq. Recipient count is unknown — messages are also forwarded to WhatsApp manually.')
+print('people  = distinct people who opened the post    pressed = distinct people who pressed העתק ופתח')
+print('rate    = pressed / people — the conversion that matters')
+print('opens / presses = raw totals, including repeat visits and repeat presses by the same person')
+print('Recipient count is unknown — messages are also forwarded to WhatsApp manually.')

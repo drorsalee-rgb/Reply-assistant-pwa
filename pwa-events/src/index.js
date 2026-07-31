@@ -30,6 +30,15 @@ const EVENTS = {
   exhausted: 'exhausted'
 };
 
+// Events we also count per distinct visitor: the first time a given
+// (anonymous) device fires the event for a post, a marker document is
+// created in this subcollection and the matching counter goes up. That
+// turns "how many taps" into "how many people".
+const UNIQUE = {
+  open: { sub: 'sessions', field: 'uniqueOpens' },
+  copy_open: { sub: 'copiers', field: 'uniqueCopyOpen' }
+};
+
 app.use((req, res, next) => {
   const origin = req.get('Origin');
   if(origin && ALLOWED_ORIGINS.includes(origin)){
@@ -62,14 +71,15 @@ app.post('/e', async (req, res) => {
       lastEventAt: FieldValue.serverTimestamp()
     };
 
-    // Count distinct sessions once, on their first 'open'.
-    if(body.event === 'open' && session){
+    // Count each distinct visitor once per post, per event.
+    const unique = UNIQUE[body.event];
+    if(unique && session){
       try{
-        await statsRef.collection('sessions').doc(session).create({
+        await statsRef.collection(unique.sub).doc(session).create({
           at: FieldValue.serverTimestamp()
         });
-        update.uniqueOpens = FieldValue.increment(1);
-      }catch(e){ /* already seen this session — only the raw open counts */ }
+        update[unique.field] = FieldValue.increment(1);
+      }catch(e){ /* seen this visitor before — only the raw counter moves */ }
     }
 
     await statsRef.set(update, { merge: true });
