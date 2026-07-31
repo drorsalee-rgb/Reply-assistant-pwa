@@ -50,42 +50,49 @@ app.use((req, res, next) => {
   next();
 });
 
+async function record(req){
+  const origin = req.get('Origin');
+  if(origin && !ALLOWED_ORIGINS.includes(origin)) return;
+
+  let body = {};
+  try{ body = JSON.parse(req.body || '{}'); }catch(e){ return; }
+
+  const field = EVENTS[body.event];
+  const documentId = typeof body.document_id === 'string' ? body.document_id.slice(0, 64) : '';
+  const session = typeof body.session === 'string' ? body.session.slice(0, 40) : '';
+  if(!field || !documentId) return;
+
+  const statsRef = db.collection(STATS).doc(documentId);
+  const update = {
+    [field]: FieldValue.increment(1),
+    lastEventAt: FieldValue.serverTimestamp()
+  };
+
+  // Count each distinct visitor once per post, per event.
+  const unique = UNIQUE[body.event];
+  if(unique && session){
+    try{
+      await statsRef.collection(unique.sub).doc(session).create({
+        at: FieldValue.serverTimestamp()
+      });
+      update[unique.field] = FieldValue.increment(1);
+    }catch(e){ /* seen this visitor before — only the raw counter moves */ }
+  }
+
+  await statsRef.set(update, { merge: true });
+}
+
 app.post('/e', async (req, res) => {
-  // Always answer 204 quickly: this must never slow down or break the PWA.
-  res.status(204).end();
+  // The write completes before the response: Cloud Run throttles CPU once a
+  // response is sent, so work started after it can be suspended and lost.
+  // The browser doesn't wait for this reply (it's a beacon), so waiting
+  // costs the user nothing.
   try{
-    const origin = req.get('Origin');
-    if(origin && !ALLOWED_ORIGINS.includes(origin)) return;
-
-    let body = {};
-    try{ body = JSON.parse(req.body || '{}'); }catch(e){ return; }
-
-    const field = EVENTS[body.event];
-    const documentId = typeof body.document_id === 'string' ? body.document_id.slice(0, 64) : '';
-    const session = typeof body.session === 'string' ? body.session.slice(0, 40) : '';
-    if(!field || !documentId) return;
-
-    const statsRef = db.collection(STATS).doc(documentId);
-    const update = {
-      [field]: FieldValue.increment(1),
-      lastEventAt: FieldValue.serverTimestamp()
-    };
-
-    // Count each distinct visitor once per post, per event.
-    const unique = UNIQUE[body.event];
-    if(unique && session){
-      try{
-        await statsRef.collection(unique.sub).doc(session).create({
-          at: FieldValue.serverTimestamp()
-        });
-        update[unique.field] = FieldValue.increment(1);
-      }catch(e){ /* seen this visitor before — only the raw counter moves */ }
-    }
-
-    await statsRef.set(update, { merge: true });
+    await record(req);
   }catch(err){
     console.error('event error:', err.message);
   }
+  res.status(204).end();
 });
 
 app.get('/healthz', (req, res) => res.json({ ok: true }));
