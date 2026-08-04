@@ -21,27 +21,33 @@
 </head>
 <body>
 <script>
-  document.cookie = 'style=' + encodeURIComponent(JSON.stringify({gender:'male', tone:'formal'})) + ';max-age=63072000;path=/';
-  document.write('<iframe src="index.html?document_id=I7iP9eviU22W6X3fuXhC"></iframe>');
+  document.cookie = 'style=' + encodeURIComponent(JSON.stringify({gender:'male', tone:'aggressive'})) + ';max-age=63072000;path=/';
+  // seed the personal tally so the counter line is visible in the screenshot
+  localStorage.setItem('copyTally', JSON.stringify({total: 6, ts: [Date.now() - 86400000, Date.now() - 3600000]}));
+  // a post whose stored URL carries the author handle, so the name shows
+  document.write('<iframe src="../index.html?document_id=NyKpsHhGmjlM7zKFmK09"></iframe>');
 </script>
 <!-- 1: style bar -->
-<div class="frame" style="left:17px;top:17px;width:335px;height:69px;"></div>
-<div class="badge" style="left:2px;top:35px;">1</div>
-<!-- 2: post summary -->
-<div class="frame" style="left:17px;top:100px;width:335px;height:263px;"></div>
-<div class="badge" style="left:2px;top:215px;">2</div>
+<div class="frame" style="left:17px;top:17px;width:341px;height:75px;"></div>
+<div class="badge" style="left:2px;top:38px;">1</div>
+<!-- 2: post summary (incl. network icon + author) -->
+<div class="frame" style="left:17px;top:100px;width:341px;height:266px;"></div>
+<div class="badge" style="left:2px;top:218px;">2</div>
 <!-- 3: prev/next arrows (highlight both) -->
 <div class="frame" style="left:32px;top:407px;width:40px;height:40px;border-radius:50%;"></div>
 <div class="frame" style="left:303px;top:407px;width:40px;height:40px;border-radius:50%;"></div>
 <div class="badge" style="left:2px;top:380px;">3</div>
 <!-- 4: suggestion text -->
-<div class="frame" style="left:18px;top:454px;width:336px;height:184px;"></div>
-<div class="badge" style="left:2px;top:535px;">4</div>
+<div class="frame" style="left:18px;top:454px;width:339px;height:165px;"></div>
+<div class="badge" style="left:2px;top:525px;">4</div>
 <!-- 5: accept button -->
-<div class="frame" style="left:17px;top:650px;width:335px;height:62px;"></div>
-<div class="badge" style="left:2px;top:664px;">5</div>
+<div class="frame" style="left:17px;top:628px;width:341px;height:63px;"></div>
+<div class="badge" style="left:2px;top:642px;">5</div>
+<!-- 7: personal tally -->
+<div class="frame" style="left:17px;top:721px;width:341px;height:31px;border-radius:8px;"></div>
+<div class="badge" style="left:2px;top:720px;">7</div>
 <!-- 6: decline button -->
-<div class="frame" style="left:17px;top:745px;width:335px;height:50px;"></div>
-<div class="badge" style="left:2px;top:753px;">6</div>
+<div class="frame" style="left:17px;top:755px;width:341px;height:50px;"></div>
+<div class="badge" style="left:2px;top:763px;">6</div>
 </body>
 </html>
