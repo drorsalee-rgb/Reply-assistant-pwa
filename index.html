@@ -840,8 +840,22 @@ function setLocked(locked){
   }
 }
 
+// Descriptions arrive with raw markdown from the generator ("- **נושא**: …");
+// strip it so the reader sees plain text rather than asterisks.
+function cleanSnippet(text){
+  return String(text || '')
+    .replace(/\*\*(.+?)\*\*/g, '$1')
+    .replace(/^\s*[-*•]\s+/gm, '')
+    .replace(/^#{1,6}\s*/gm, '')
+    .trim();
+}
+
 function renderContext(ctx){
-  els.context.innerHTML = `<span class="snippet">${ctx.snippet}</span>`;
+  els.context.innerHTML = `<span class="snippet">${cleanSnippet(ctx.snippet)}</span>`;
+}
+
+function renderTranslating(){
+  els.context.innerHTML = '<span class="snippet placeholder">מתרגם את תקציר הפוסט…</span>';
 }
 
 // ---- claim-social-reactions API ----
@@ -1353,12 +1367,14 @@ async function init(){
   renderSocialIcon();
   renderAuthor();
 
+  // Don't flash the English text while the translation is in flight — show
+  // that something is happening, and fall back to the original only if the
+  // translation actually fails.
   if(PAGE_CONTEXT.snippet && isMostlyEnglish(PAGE_CONTEXT.snippet)){
+    renderTranslating();
     const translated = await translateToHebrew(PAGE_CONTEXT.snippet);
-    if(translated){
-      PAGE_CONTEXT.snippet = translated;
-      renderContext(PAGE_CONTEXT);
-    }
+    if(translated) PAGE_CONTEXT.snippet = translated;
+    renderContext(PAGE_CONTEXT);
   }
 
   track('open');
