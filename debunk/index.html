@@ -256,7 +256,7 @@
   </div>
 
   <div class="card-wrap">
-    <div class="card">
+    <div class="card" id="card">
       <div class="card-header">ההפרכה שלך</div>
       <p class="quote-text placeholder" id="quoteText">טוען…</p>
     </div>
@@ -313,6 +313,7 @@ const els = {
   context: document.getElementById('context'),
   summaryIcon: document.getElementById('summaryIcon'),
   socialIcon: document.getElementById('socialIcon'),
+  card: document.getElementById('card'),
   quoteText: document.getElementById('quoteText'),
   acceptBtn: document.getElementById('acceptBtn'),
   acceptLabel: document.getElementById('acceptLabel'),
@@ -587,6 +588,26 @@ function showWording(step){
 
 els.nextWording.addEventListener('click', () => showWording(1));
 els.prevWording.addEventListener('click', () => showWording(-1));
+
+// Swipe across the card to move between wordings — same gesture direction
+// and threshold as the main PWA, so the two apps feel identical.
+let touchStartX = null;
+els.card.addEventListener('touchstart', (e) => {
+  touchStartX = e.touches[0].clientX;
+}, { passive: true });
+els.card.addEventListener('touchend', (e) => {
+  if(touchStartX === null) return;
+  const dx = e.changedTouches[0].clientX - touchStartX;
+  touchStartX = null;
+  const SWIPE_THRESHOLD = 40;
+  if(dx <= -SWIPE_THRESHOLD) showWording(-1);
+  else if(dx >= SWIPE_THRESHOLD) showWording(1);
+});
+
+document.addEventListener('keydown', (e) => {
+  if(e.key === 'ArrowRight') showWording(1);
+  else if(e.key === 'ArrowLeft') showWording(-1);
+});
 
 els.declineBtn.addEventListener('click', () => {
   track('decline');
