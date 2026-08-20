@@ -196,6 +196,28 @@
     border-radius:14px;
   }
   .btn-rephrase:active{ transform:scale(0.97); }
+  .gender-row{
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    gap:8px;
+    font-size:14px;
+    color:#8aa097;
+  }
+  .gender-btn{
+    background:rgba(255,255,255,0.06);
+    border:1px solid rgba(255,255,255,0.12);
+    color:#bfe6ee;
+    font-weight:600;
+    font-size:14px;
+    padding:7px 18px;
+    border-radius:12px;
+  }
+  .gender-btn.selected{
+    background:var(--accent);
+    border-color:var(--accent);
+    color:var(--accent-ink);
+  }
 
   @media (max-height: 700px){
     .screen{ padding:12px 16px; gap:10px; }
@@ -238,6 +260,11 @@
       <span class="social-icon" id="socialIcon" hidden></span>
       <span id="acceptLabel">העתק ופתח</span>
     </button>
+    <div class="gender-row" id="genderRow" hidden>
+      <span>הניסוח בלשון:</span>
+      <button class="gender-btn" id="genderMale" data-gender="male">זכר</button>
+      <button class="gender-btn" id="genderFemale" data-gender="female">נקבה</button>
+    </div>
     <button class="btn-rephrase" id="rephraseBtn" hidden>נסח אחר ↻</button>
     <p class="hint" id="hint">הדבק את ההפרכה כתגובה אחרי פתיחה</p>
     <p class="source" id="source" hidden></p>
@@ -281,7 +308,10 @@ const els = {
   hint: document.getElementById('hint'),
   source: document.getElementById('source'),
   declineBtn: document.getElementById('declineBtn'),
-  rephrase: document.getElementById('rephraseBtn')
+  rephrase: document.getElementById('rephraseBtn'),
+  genderRow: document.getElementById('genderRow'),
+  genderMale: document.getElementById('genderMale'),
+  genderFemale: document.getElementById('genderFemale')
 };
 
 const PAGE = { claim: '', debunk: '', postUrl: null, sourceUrl: null, network: null };
@@ -289,8 +319,10 @@ const PAGE = { claim: '', debunk: '', postUrl: null, sourceUrl: null, network: n
 // Each recipient's link carries a variant index, so the people drawn for one
 // alert don't all post the identical sentence.
 const variantIndex = parseInt(params.get('v'), 10);
+let variantSets = { male: [], female: [] };
 let variants = [];
 let variantAt = 0;
+let gender = null;
 
 /* ---------- usage counters (same service as the main PWA) ---------- */
 
@@ -384,18 +416,54 @@ async function loadMessage(){
 
 // Alternative wordings of the same rebuttal, generated when the alert went
 // out. Absent (or unreachable) simply means everyone shares the original.
+function stringArray(fields, name){
+  const node = fields && fields[name] && fields[name].arrayValue;
+  const values = node && node.values ? node.values : [];
+  return values.map(v => v.stringValue).filter(Boolean);
+}
+
 async function loadVariants(){
-  if(!messageId) return [];
+  if(!messageId) return { male: [], female: [] };
   try{
     const res = await fetch(VARIANTS_DOC_URL + encodeURIComponent(messageId) + '?key=' + FIREBASE_API_KEY);
-    if(!res.ok) return [];
+    if(!res.ok) return { male: [], female: [] };
     const doc = await res.json();
-    const values = doc.fields && doc.fields.variants && doc.fields.variants.arrayValue
-      ? doc.fields.variants.arrayValue.values || [] : [];
-    return values.map(v => v.stringValue).filter(Boolean);
+    const fields = doc.fields || {};
+    const male = stringArray(fields, 'male');
+    const female = stringArray(fields, 'female');
+    if(male.length || female.length){
+      return { male: male.length ? male : female, female: female.length ? female : male };
+    }
+    // Alerts generated before gendered variants existed.
+    const legacy = stringArray(fields, 'variants');
+    return { male: legacy, female: legacy };
   }catch(e){
-    return [];
+    return { male: [], female: [] };
   }
+}
+
+// Hebrew is gendered, so a first-person rebuttal reads wrong in the other
+// gender. The main PWA already stores this choice in a cookie on the same
+// origin — reuse it rather than asking again.
+function readGender(){
+  const match = document.cookie.match(/(?:^|;\s*)style=([^;]+)/);
+  if(match){
+    try{
+      const style = JSON.parse(decodeURIComponent(match[1]));
+      if(style && (style.gender === 'male' || style.gender === 'female')) return style.gender;
+    }catch(e){}
+  }
+  return null;
+}
+
+function saveGender(gender){
+  let style = {};
+  const match = document.cookie.match(/(?:^|;\s*)style=([^;]+)/);
+  if(match){
+    try{ style = JSON.parse(decodeURIComponent(match[1])) || {}; }catch(e){}
+  }
+  style.gender = gender;
+  document.cookie = 'style=' + encodeURIComponent(JSON.stringify(style)) + ';max-age=63072000;path=/';
 }
 
 function renderContext(){
@@ -452,6 +520,27 @@ els.acceptBtn.addEventListener('click', async () => {
   }
 });
 
+function applyGender(next){
+  gender = next;
+  variants = variantSets[next] && variantSets[next].length ? variantSets[next] : variantSets.male;
+  els.genderMale.classList.toggle('selected', next === 'male');
+  els.genderFemale.classList.toggle('selected', next === 'female');
+  if(variants.length){
+    variantAt = Math.min(variantAt, variants.length - 1);
+    PAGE.debunk = variants[variantAt];
+  }
+}
+
+[els.genderMale, els.genderFemale].forEach(btn => {
+  btn.addEventListener('click', () => {
+    applyGender(btn.dataset.gender);
+    saveGender(btn.dataset.gender);
+    renderDebunk();
+    els.acceptBtn.classList.remove('done');
+    els.acceptLabel.textContent = 'העתק ופתח';
+  });
+});
+
 els.rephrase.addEventListener('click', () => {
   if(variants.length < 2) return;
   variantAt = (variantAt + 1) % variants.length;
@@ -485,11 +574,19 @@ async function init(){
   PAGE.claim = claim;
   PAGE.debunk = debunk;
 
-  variants = await loadVariants();
+  variantSets = await loadVariants();
+  const storedGender = readGender();      // null until the reader tells us
+  applyGender(storedGender || 'male');
+
   if(variants.length){
-    variantAt = Number.isInteger(variantIndex) ? ((variantIndex % variants.length) + variants.length) % variants.length : 0;
+    variantAt = Number.isInteger(variantIndex)
+      ? ((variantIndex % variants.length) + variants.length) % variants.length
+      : 0;
     PAGE.debunk = variants[variantAt];
     els.rephrase.hidden = variants.length < 2;
+    // Ask only when we don't already know, and only when it changes the text.
+    const differs = variantSets.male.some((v, i) => v !== variantSets.female[i]);
+    els.genderRow.hidden = Boolean(storedGender) || !differs;
   }
   PAGE.postUrl = field(fields, 'post_url');
   PAGE.sourceUrl = field(fields, 'message_link');
