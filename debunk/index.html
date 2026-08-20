@@ -186,6 +186,16 @@
     border-radius:14px;
   }
   .btn-decline:active{ transform:scale(0.97); }
+  .btn-rephrase{
+    background:rgba(255,255,255,0.06);
+    border:1px solid rgba(255,255,255,0.12);
+    color:#bfe6ee;
+    font-weight:600;
+    font-size:14.5px;
+    padding:10px 20px;
+    border-radius:14px;
+  }
+  .btn-rephrase:active{ transform:scale(0.97); }
 
   @media (max-height: 700px){
     .screen{ padding:12px 16px; gap:10px; }
@@ -228,6 +238,7 @@
       <span class="social-icon" id="socialIcon" hidden></span>
       <span id="acceptLabel">העתק ופתח</span>
     </button>
+    <button class="btn-rephrase" id="rephraseBtn" hidden>נסח אחר ↻</button>
     <p class="hint" id="hint">הדבק את ההפרכה כתגובה אחרי פתיחה</p>
     <p class="source" id="source" hidden></p>
     <button class="btn-decline" id="declineBtn">לא, תודה</button>
@@ -237,7 +248,9 @@
 <script>
 /* ---------- config ---------- */
 
-const FIRESTORE_DOC_URL = 'https://firestore.googleapis.com/v1/projects/torino-social/databases/(default)/documents/fake-hunting-messages/';
+const FIRESTORE_BASE = 'https://firestore.googleapis.com/v1/projects/torino-social/databases/(default)/documents/';
+const FIRESTORE_DOC_URL = FIRESTORE_BASE + 'fake-hunting-messages/';
+const VARIANTS_DOC_URL = FIRESTORE_BASE + 'debunk-variants/';
 const FIREBASE_API_KEY = 'AIzaSyCb27ww2YnTDCjzrQw96w39EvyVisPPY9E';
 const EVENTS_URL = 'https://pwa-events-658282975646.europe-west1.run.app/e';
 
@@ -267,10 +280,17 @@ const els = {
   acceptLabel: document.getElementById('acceptLabel'),
   hint: document.getElementById('hint'),
   source: document.getElementById('source'),
-  declineBtn: document.getElementById('declineBtn')
+  declineBtn: document.getElementById('declineBtn'),
+  rephrase: document.getElementById('rephraseBtn')
 };
 
 const PAGE = { claim: '', debunk: '', postUrl: null, sourceUrl: null, network: null };
+
+// Each recipient's link carries a variant index, so the people drawn for one
+// alert don't all post the identical sentence.
+const variantIndex = parseInt(params.get('v'), 10);
+let variants = [];
+let variantAt = 0;
 
 /* ---------- usage counters (same service as the main PWA) ---------- */
 
@@ -362,6 +382,22 @@ async function loadMessage(){
   }
 }
 
+// Alternative wordings of the same rebuttal, generated when the alert went
+// out. Absent (or unreachable) simply means everyone shares the original.
+async function loadVariants(){
+  if(!messageId) return [];
+  try{
+    const res = await fetch(VARIANTS_DOC_URL + encodeURIComponent(messageId) + '?key=' + FIREBASE_API_KEY);
+    if(!res.ok) return [];
+    const doc = await res.json();
+    const values = doc.fields && doc.fields.variants && doc.fields.variants.arrayValue
+      ? doc.fields.variants.arrayValue.values || [] : [];
+    return values.map(v => v.stringValue).filter(Boolean);
+  }catch(e){
+    return [];
+  }
+}
+
 function renderContext(){
   els.context.innerHTML = PAGE.claim
     ? `<span>${PAGE.claim}</span>`
@@ -416,6 +452,15 @@ els.acceptBtn.addEventListener('click', async () => {
   }
 });
 
+els.rephrase.addEventListener('click', () => {
+  if(variants.length < 2) return;
+  variantAt = (variantAt + 1) % variants.length;
+  PAGE.debunk = variants[variantAt];
+  renderDebunk();
+  els.acceptBtn.classList.remove('done');
+  els.acceptLabel.textContent = 'העתק ופתח';
+});
+
 els.declineBtn.addEventListener('click', () => {
   track('decline');
   els.quoteText.classList.add('placeholder');
@@ -439,6 +484,13 @@ async function init(){
   const { claim, debunk } = splitClaimAndDebunk(field(fields, 'text'));
   PAGE.claim = claim;
   PAGE.debunk = debunk;
+
+  variants = await loadVariants();
+  if(variants.length){
+    variantAt = Number.isInteger(variantIndex) ? ((variantIndex % variants.length) + variants.length) % variants.length : 0;
+    PAGE.debunk = variants[variantAt];
+    els.rephrase.hidden = variants.length < 2;
+  }
   PAGE.postUrl = field(fields, 'post_url');
   PAGE.sourceUrl = field(fields, 'message_link');
   PAGE.network = networkFromUrl(PAGE.postUrl || '');
