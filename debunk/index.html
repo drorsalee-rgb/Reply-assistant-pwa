@@ -196,6 +196,13 @@
     border-radius:14px;
   }
   .btn-rephrase:active{ transform:scale(0.97); }
+  .rephrase-row{
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    gap:10px;
+  }
+  .wording-counter{ font-size:13.5px; color:#8aa097; min-width:64px; text-align:center; }
   .gender-row{
     display:flex;
     align-items:center;
@@ -265,7 +272,11 @@
       <button class="gender-btn" id="genderMale" data-gender="male">זכר</button>
       <button class="gender-btn" id="genderFemale" data-gender="female">נקבה</button>
     </div>
-    <button class="btn-rephrase" id="rephraseBtn" hidden>נסח אחר ↻</button>
+    <div class="rephrase-row" id="rephraseBtn" hidden>
+      <button class="btn-rephrase" id="prevWording">‹ הקודם</button>
+      <span class="wording-counter" id="wordingCounter"></span>
+      <button class="btn-rephrase" id="nextWording">נסח אחר ›</button>
+    </div>
     <p class="hint" id="hint">הדבק את ההפרכה כתגובה אחרי פתיחה</p>
     <p class="source" id="source" hidden></p>
     <button class="btn-decline" id="declineBtn">לא, תודה</button>
@@ -309,6 +320,9 @@ const els = {
   source: document.getElementById('source'),
   declineBtn: document.getElementById('declineBtn'),
   rephrase: document.getElementById('rephraseBtn'),
+  prevWording: document.getElementById('prevWording'),
+  nextWording: document.getElementById('nextWording'),
+  wordingCounter: document.getElementById('wordingCounter'),
   genderRow: document.getElementById('genderRow'),
   genderMale: document.getElementById('genderMale'),
   genderFemale: document.getElementById('genderFemale')
@@ -423,23 +437,38 @@ function stringArray(fields, name){
 }
 
 async function loadVariants(){
-  if(!messageId) return { male: [], female: [] };
+  if(!messageId) return { male: [], female: [], perPerson: 1 };
   try{
     const res = await fetch(VARIANTS_DOC_URL + encodeURIComponent(messageId) + '?key=' + FIREBASE_API_KEY);
-    if(!res.ok) return { male: [], female: [] };
+    if(!res.ok) return { male: [], female: [], perPerson: 1 };
     const doc = await res.json();
     const fields = doc.fields || {};
+    const perPerson = fields.perPerson && fields.perPerson.integerValue
+      ? parseInt(fields.perPerson.integerValue, 10) : 1;
     const male = stringArray(fields, 'male');
     const female = stringArray(fields, 'female');
     if(male.length || female.length){
-      return { male: male.length ? male : female, female: female.length ? female : male };
+      return {
+        male: male.length ? male : female,
+        female: female.length ? female : male,
+        perPerson: perPerson || 1
+      };
     }
     // Alerts generated before gendered variants existed.
     const legacy = stringArray(fields, 'variants');
-    return { male: legacy, female: legacy };
+    return { male: legacy, female: legacy, perPerson: 1 };
   }catch(e){
-    return { male: [], female: [] };
+    return { male: [], female: [], perPerson: 1 };
   }
+}
+
+// This reader's own block of wordings. Everyone drawn for the alert gets a
+// different block, so browsing alternatives can't reach someone else's text.
+function myBlock(list, slot, perPerson){
+  if(!list.length) return [];
+  if(perPerson <= 1) return [list[slot % list.length]];
+  const start = (slot * perPerson) % list.length;
+  return list.slice(start, start + perPerson);
 }
 
 // Hebrew is gendered, so a first-person rebuttal reads wrong in the other
@@ -541,14 +570,23 @@ function applyGender(next){
   });
 });
 
-els.rephrase.addEventListener('click', () => {
+function renderVariantCounter(){
+  els.wordingCounter.textContent = variants.length > 1
+    ? `${variantAt + 1} מתוך ${variants.length}` : '';
+}
+
+function showWording(step){
   if(variants.length < 2) return;
-  variantAt = (variantAt + 1) % variants.length;
+  variantAt = (variantAt + step + variants.length) % variants.length;
   PAGE.debunk = variants[variantAt];
   renderDebunk();
+  renderVariantCounter();
   els.acceptBtn.classList.remove('done');
   els.acceptLabel.textContent = 'העתק ופתח';
-});
+}
+
+els.nextWording.addEventListener('click', () => showWording(1));
+els.prevWording.addEventListener('click', () => showWording(-1));
 
 els.declineBtn.addEventListener('click', () => {
   track('decline');
@@ -574,20 +612,25 @@ async function init(){
   PAGE.claim = claim;
   PAGE.debunk = debunk;
 
-  variantSets = await loadVariants();
+  const loaded = await loadVariants();
+  const slot = Number.isInteger(variantIndex) && variantIndex >= 0 ? variantIndex : 0;
+  variantSets = {
+    male: myBlock(loaded.male, slot, loaded.perPerson),
+    female: myBlock(loaded.female, slot, loaded.perPerson)
+  };
+
   const storedGender = readGender();      // null until the reader tells us
   applyGender(storedGender || 'male');
 
   if(variants.length){
-    variantAt = Number.isInteger(variantIndex)
-      ? ((variantIndex % variants.length) + variants.length) % variants.length
-      : 0;
+    variantAt = 0;
     PAGE.debunk = variants[variantAt];
     els.rephrase.hidden = variants.length < 2;
     // Ask only when we don't already know, and only when it changes the text.
     const differs = variantSets.male.some((v, i) => v !== variantSets.female[i]);
     els.genderRow.hidden = Boolean(storedGender) || !differs;
   }
+  renderVariantCounter();
   PAGE.postUrl = field(fields, 'post_url');
   PAGE.sourceUrl = field(fields, 'message_link');
   PAGE.network = networkFromUrl(PAGE.postUrl || '');
