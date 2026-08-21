@@ -840,10 +840,23 @@ function setLocked(locked){
   }
 }
 
+// The generator repeats the post after a "Description:" (or "Content:")
+// label, so the summary shows the same text twice. Keep the first copy when
+// the two clearly overlap.
+function stripDuplicateDescription(text){
+  const match = String(text || '').match(/^([\s\S]+?)\n\s*(?:Description|Content)\s*:\s*([\s\S]+)$/i);
+  if(!match) return String(text || '');
+  const head = match[1].trim();
+  const tail = match[2].trim();
+  if(!head || !tail) return String(text || '');
+  const overlap = 30;
+  return head.slice(0, overlap) === tail.slice(0, overlap) ? head : String(text || '');
+}
+
 // Descriptions arrive with raw markdown from the generator ("- **נושא**: …");
 // strip it so the reader sees plain text rather than asterisks.
 function cleanSnippet(text){
-  return String(text || '')
+  return stripDuplicateDescription(text)
     .replace(/\*\*(.+?)\*\*/g, '$1')
     .replace(/^\s*[-*•]\s+/gm, '')
     .replace(/^#{1,6}\s*/gm, '')
@@ -1356,7 +1369,9 @@ async function init(){
   const info = await fetchPostInfo();
   if(info){
     // Accept both the spec's snake_case names and the raw Firestore field names
-    const snippet = info.post_snippet || info.postDescription;
+    // Strip the duplicated copy before anything else reads it — otherwise
+    // translation runs over the same text twice.
+    const snippet = stripDuplicateDescription(info.post_snippet || info.postDescription);
     const postUrl = info.post_url || info.postUrl;
     if(snippet) PAGE_CONTEXT.snippet = snippet;
     if(postUrl) PAGE_CONTEXT.postUrl = postUrl;
