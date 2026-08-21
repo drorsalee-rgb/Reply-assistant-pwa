@@ -1327,8 +1327,17 @@ function deriveAuthor(url){
   return null;
 }
 
+// A username gets an @ ("RedRevDanny" -> "@RedRevDanny"); a display name
+// like "כולנו 7.10" is shown as written.
+function formatAuthor(name){
+  const value = String(name || '').trim();
+  if(!value) return '';
+  if(value.startsWith('@')) return value;
+  return /^[A-Za-z0-9._]+$/.test(value) ? '@' + value : value;
+}
+
 function renderAuthor(){
-  const author = PAGE_CONTEXT.author || deriveAuthor(PAGE_CONTEXT.postUrl || '');
+  const author = formatAuthor(PAGE_CONTEXT.author || deriveAuthor(PAGE_CONTEXT.postUrl || ''));
   if(!author){ els.postAuthor.hidden = true; return; }
   els.postAuthor.textContent = author;
   els.postAuthor.hidden = false;
