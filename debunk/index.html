@@ -203,6 +203,13 @@
     gap:10px;
   }
   .wording-counter{ font-size:13.5px; color:#8aa097; min-width:64px; text-align:center; }
+  .length-badge{
+    margin:6px 0 0;
+    text-align:center;
+    font-size:12.5px;
+    color:#8aa097;
+  }
+  .length-badge.over{ color:#f0946a; font-weight:700; }
   .gender-row{
     display:flex;
     align-items:center;
@@ -260,6 +267,7 @@
       <div class="card-header">ההפרכה שלך</div>
       <p class="quote-text placeholder" id="quoteText">טוען…</p>
     </div>
+    <p class="length-badge" id="lengthBadge" hidden></p>
   </div>
 
   <div class="actions">
@@ -324,6 +332,7 @@ const els = {
   prevWording: document.getElementById('prevWording'),
   nextWording: document.getElementById('nextWording'),
   wordingCounter: document.getElementById('wordingCounter'),
+  length: document.getElementById('lengthBadge'),
   genderRow: document.getElementById('genderRow'),
   genderMale: document.getElementById('genderMale'),
   genderFemale: document.getElementById('genderFemale')
@@ -502,11 +511,24 @@ function renderContext(){
     : '<span class="placeholder">לא התקבלו פרטי הפוסט.</span>';
 }
 
+// X rejects replies over 280 characters, so show the count when it matters.
+const NETWORK_CHAR_LIMITS = { x: 280 };
+
+function renderLength(){
+  const limit = NETWORK_CHAR_LIMITS[PAGE.network];
+  if(!limit || !PAGE.debunk){ els.length.hidden = true; return; }
+  const used = PAGE.debunk.length;
+  els.length.textContent = `${used} / ${limit} תווים`;
+  els.length.classList.toggle('over', used > limit);
+  els.length.hidden = false;
+}
+
 function renderDebunk(){
   if(PAGE.debunk){
     els.quoteText.classList.remove('placeholder');
     els.quoteText.textContent = PAGE.debunk;
     els.acceptBtn.disabled = false;
+    renderLength();
   } else {
     els.quoteText.classList.add('placeholder');
     els.quoteText.textContent = 'לא נמצאה הפרכה עבור הפוסט הזה.';
