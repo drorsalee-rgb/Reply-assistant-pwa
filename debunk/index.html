@@ -461,7 +461,10 @@ async function loadVariants(){
       return {
         male: male.length ? male : female,
         female: female.length ? female : male,
-        perPerson: perPerson || 1
+        perPerson: perPerson || 1,
+        // Our own copy of the offending post's URL, in case the alert
+        // document doesn't carry one.
+        postUrl: fields.postUrl && fields.postUrl.stringValue
       };
     }
     // Alerts generated before gendered variants existed.
@@ -656,6 +659,9 @@ async function init(){
   PAGE.debunk = debunk;
 
   const loaded = await loadVariants();
+  if(!PAGE.postUrl && loaded.postUrl) PAGE.postUrl = loaded.postUrl;
+  PAGE.network = networkFromUrl(PAGE.postUrl || '');
+
   const slot = Number.isInteger(variantIndex) && variantIndex >= 0 ? variantIndex : 0;
   variantSets = {
     male: myBlock(loaded.male, slot, loaded.perPerson),
@@ -676,7 +682,6 @@ async function init(){
   renderVariantCounter();
   PAGE.postUrl = field(fields, 'post_url');
   PAGE.sourceUrl = field(fields, 'message_link');
-  PAGE.network = networkFromUrl(PAGE.postUrl || '');
 
   renderContext();
   renderDebunk();
