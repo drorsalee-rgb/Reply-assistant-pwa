@@ -18,6 +18,26 @@ constant time; anything else gets a 401. See `src/verify.js`.
 **The work runs before the response.** Cloud Run throttles CPU once a response
 is sent, so acknowledging first means the opt-in never gets written.
 
+## The PrivateMessageReceived payload
+
+Confirmed against a real event — `from` is an **object**, not a string:
+
+```json
+{
+  "id": "evt_…", "createdAt": "…", "type": "PrivateMessageReceived", "apiVersion": "v1",
+  "data": {
+    "id": "…", "body": "הכל",
+    "from": { "phoneNumber": "972547554469", "whatsappUserId": "972547554469@c.us",
+              "firstName": "…", "nickname": "…", "beaconId": "co_…" },
+    "to": "972524342846", "chatId": "…@c.us", "type": "chat",
+    "timestamp": "…", "hasMedia": false
+  }
+}
+```
+
+`phoneNumber` arrives without a `+`. Anything we can't parse is stored in
+`beacon-webhook-events` so the shape can be corrected and the event replayed.
+
 ## What a message does
 
 `src/preferences.js` parses plain Hebrew ("רק פייסבוק ואינסטה", "אקס בלבד",

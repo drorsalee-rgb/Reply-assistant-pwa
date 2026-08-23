@@ -19,18 +19,28 @@ const WEBHOOK_SECRET = process.env.BEACON_WEBHOOK_SECRET || '';
 const OPTINS = 'fake-hunt-optins';
 const EVENTS_LOG = 'beacon-webhook-events';
 
-// Beacon's webhook payload shape isn't in the OpenAPI spec, so read the
-// fields defensively and keep a copy of anything unrecognised for diagnosis.
+// Beacon's PrivateMessageReceived payload (confirmed against a real event):
+//   { id, createdAt, type, apiVersion,
+//     data: { body, from: { phoneNumber, firstName, nickname, … },
+//             to, chatId, timestamp, hasMedia, … } }
+// `from` is an object, not a string. Fallbacks stay for other shapes.
 function extractMessage(event){
   const data = event.data || event.payload || event;
+  const from = data.from && typeof data.from === 'object' ? data.from : null;
+
   const phone =
-    data.phoneNumber || data.phone || data.from || data.sender ||
-    (data.contact && (data.contact.phoneNumber || data.contact.phone)) ||
-    (data.message && (data.message.from || data.message.phoneNumber)) || null;
+    (from && (from.phoneNumber || from.whatsappUserId)) ||
+    data.phoneNumber || data.phone ||
+    (typeof data.from === 'string' ? data.from : null) ||
+    (data.contact && (data.contact.phoneNumber || data.contact.phone)) || null;
+
   const text =
     data.body || data.text || data.content || data.messageBody ||
-    (data.message && (data.message.body || data.message.text || data.message.content)) || '';
-  return { phone: phone ? String(phone) : null, text: String(text || '') };
+    (data.message && (data.message.body || data.message.text)) || '';
+
+  const name = from ? (from.firstName || from.nickname || '') : '';
+
+  return { phone: phone ? String(phone) : null, text: String(text || ''), name: String(name || '').trim() };
 }
 
 function normalizePhone(phone){
@@ -95,7 +105,7 @@ app.post('/webhook', express.raw({ type: '*/*', limit: '1mb' }), async (req, res
       return res.status(200).json({ ok: true, ignored: type });
     }
 
-    const { phone: rawPhone, text } = extractMessage(event);
+    const { phone: rawPhone, text, name } = extractMessage(event);
     const phone = rawPhone ? normalizePhone(rawPhone) : null;
     if(!phone){
       // Shape differs from what we guessed — keep it so we can adapt.
@@ -111,7 +121,8 @@ app.post('/webhook', express.raw({ type: '*/*', limit: '1mb' }), async (req, res
     const { isNew } = await recordOptIn(phone, parsed);
     console.log(`opt-in ${isNew ? 'created' : 'updated'}: action=${parsed.action} networks=${parsed.networks.join(',') || 'all'}`);
 
-    const reply = confirmationMessage(parsed, { isNew });
+    const greeting = name && parsed.action !== 'stop' ? `היי ${name.split(' ')[0]}! ` : '';
+    const reply = greeting + confirmationMessage(parsed, { isNew });
     await beacon.sendMessage({ phoneNumbers: [phone], message: reply });
     return res.status(200).json({ ok: true, action: parsed.action });
   }catch(err){
