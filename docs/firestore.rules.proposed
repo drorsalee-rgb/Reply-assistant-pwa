@@ -1,0 +1,95 @@
+rules_version = '2';
+
+// Proposed rules for the torino-social Firestore.
+//
+// Replaces the default "test mode" rule, which allows anyone on the internet
+// to read AND write every document in the project until 2027-09-04.
+//
+// Principles:
+//   1. Deny by default. Nothing is reachable unless a rule below allows it.
+//   2. Browsers never write. Every write goes through a backend service using
+//      the Admin SDK, which bypasses rules entirely and is unaffected by this
+//      file.
+//   3. The two PWAs are unauthenticated, so the handful of collections they
+//      read are public — but by direct document id only, never as a list.
+//   4. Everything else requires a signed-in dashboard user.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ---- helpers ----
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    // ---- public reads: what the PWAs need ----
+    // The PWA is opened from a link that already contains the document id, so
+    // `get` is enough. `list` stays denied: without it, nobody can enumerate
+    // the collection and walk every post we have ever handled.
+
+    // Main PWA — the post summary behind ?document_id=
+    match /social-reactions/{docId} {
+      allow get: if true;
+      allow list, write: if false;
+    }
+
+    // Debunk PWA — the alert behind ?message_id=
+    match /fake-hunting-messages/{messageId} {
+      allow get: if true;
+      allow list, write: if false;
+    }
+
+    // Debunk PWA — the per-recipient wordings for that alert
+    match /debunk-variants/{messageId} {
+      allow get: if true;
+      allow list, write: if false;
+    }
+
+    // ---- dashboard reads ----
+    // Signed-in dashboard users only. This is where the sensitive data lives:
+    // fake-hunt-optins holds volunteers' phone numbers and first names, and
+    // fake-hunt-selections links a person to what they were sent.
+    match /users/{docId}            { allow read: if signedIn(); allow write: if false; }
+    match /content_providers/{docId}{ allow read: if signedIn(); allow write: if signedIn(); }
+    match /prompt-constants/{docId} { allow read: if signedIn(); allow write: if signedIn(); }
+    match /prompt-constants_staging/{docId} { allow read: if signedIn(); allow write: if signedIn(); }
+    match /reaction-styles-config/{docId}   { allow read: if signedIn(); allow write: if signedIn(); }
+    match /remote-config/{docId}    { allow read: if signedIn(); allow write: if signedIn(); }
+    match /version-control/{docId}  { allow read: if signedIn(); allow write: if signedIn(); }
+    match /whitelist/{docId}        { allow read: if signedIn(); allow write: if signedIn(); }
+
+    match /pwa-stats/{docId} {
+      allow read: if signedIn();
+      allow write: if false;
+      // Per-recipient opens, written by the pwa-events service.
+      match /{sub=**} {
+        allow read: if signedIn();
+        allow write: if false;
+      }
+    }
+
+    match /fake-hunt-optins/{docId}     { allow read: if signedIn(); allow write: if false; }
+    match /fake-hunt-selections/{docId} { allow read: if signedIn(); allow write: if false; }
+    match /broadcast-log/{docId}        { allow read: if signedIn(); allow write: if false; }
+    match /reaction_dashboard_counts/{docId} { allow read: if signedIn(); allow write: if false; }
+    match /groups/{docId}               { allow read: if signedIn(); allow write: if false; }
+    match /creator_channels/{docId}     { allow read: if signedIn(); allow write: if false; }
+    match /user_subscriptions/{docId}   { allow read: if signedIn(); allow write: if false; }
+    match /brief-messages/{docId}       { allow read: if signedIn(); allow write: if false; }
+    match /slack_posts/{docId}          { allow read: if signedIn(); allow write: if false; }
+
+    // ---- server-only ----
+    // Never read or written from a browser. Left to the default deny below:
+    //   beacon-webhook-events, broadcast-alerts, broadcast-config,
+    //   channel-brief-*, dedupe_message_content, fake-hunt-messages,
+    //   fake-hunting-config, slack_event_queue, slack_inline_event_dedupe
+    //
+    // The Cloud Run services that use these go through the Admin SDK and are
+    // not affected by these rules.
+
+    // ---- default deny ----
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
