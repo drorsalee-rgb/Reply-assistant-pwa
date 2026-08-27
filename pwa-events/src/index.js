@@ -10,6 +10,8 @@
 
 const express = require('express');
 const { Firestore, FieldValue } = require('@google-cloud/firestore');
+const { appendReport } = require('./sheet');
+const { clientIp, overLimit } = require('./rateLimit');
 
 const db = new Firestore();
 const app = express();
@@ -18,6 +20,17 @@ const app = express();
 app.use(express.text({ type: '*/*', limit: '4kb' }));
 
 const STATS = 'pwa-stats';
+const FEEDBACK = 'debunk-feedback';
+// Set once the sheet exists and is shared with this service's account.
+const SHEET_ID = process.env.FEEDBACK_SHEET_ID || '';
+
+// Only these reasons are accepted; anything else is dropped rather than stored.
+const REPORT_REASONS = {
+  post_wont_open: 'הפוסט המקורי לא נפתח',
+  replies_disabled: 'הפוסט לא מאפשר תגובות',
+  not_fake: 'זה לא באמת פייק',
+  reply_mismatch: 'התגובה לא מתאימה לפוסט',
+};
 const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS ||
   'https://yoriki-500811.web.app,http://localhost:8765').split(',');
 
@@ -54,6 +67,13 @@ async function record(req){
   const origin = req.get('Origin');
   if(origin && !ALLOWED_ORIGINS.includes(origin)) return;
 
+  // Counters exist to be believed; letting one address inflate them makes the
+  // dashboard lie about how many people the campaign actually reached.
+  if(overLimit('events', clientIp(req))){
+    console.warn('events rate limited');
+    return;
+  }
+
   let body = {};
   try{ body = JSON.parse(req.body || '{}'); }catch(e){ return; }
 
@@ -63,6 +83,18 @@ async function record(req){
   if(!field || !documentId) return;
 
   const statsRef = db.collection(STATS).doc(documentId);
+
+  // Fake Hunting links carry a recipient slot, so an open can be attributed
+  // to the person that link was sent to (the slot maps to a phone number in
+  // fake-hunt-selections). Recorded as a per-recipient subcollection rather
+  // than a counter, so the dashboard can list who acted on an alert.
+  const recipient = typeof body.recipient === 'string' ? body.recipient.slice(0, 8) : '';
+  if(recipient && /^\d+$/.test(recipient) && documentId.startsWith('debunk:')){
+    await statsRef.collection('recipients').doc(recipient).set({
+      [field]: FieldValue.increment(1),
+      lastEventAt: FieldValue.serverTimestamp()
+    }, { merge: true });
+  }
   const update = {
     [field]: FieldValue.increment(1),
     lastEventAt: FieldValue.serverTimestamp()
@@ -91,6 +123,127 @@ app.post('/e', async (req, res) => {
     await record(req);
   }catch(err){
     console.error('event error:', err.message);
+  }
+  res.status(204).end();
+});
+
+// Who reported, in a form that can be shared with the fake-hunting team
+// without handing over the volunteers' phone numbers: first name plus the last
+// four digits is enough to follow up internally.
+async function reporterLabel(messageId, slot){
+  try{
+    const snap = await db.collection('fake-hunt-selections')
+      .where('messageId', '==', messageId)
+      .get();
+    const match = snap.docs.find(d => String(d.data().variant) === String(slot));
+    if(!match) return `משבצת ${slot}`;
+    const phone = match.data().phone || '';
+    const optin = await db.collection('fake-hunt-optins').doc('whatsapp:' + phone).get();
+    const name = optin.exists ? (optin.data().firstName || '') : '';
+    const tail = phone.slice(-4);
+    return [name, tail && `…${tail}`].filter(Boolean).join(' ') || `משבצת ${slot}`;
+  }catch(e){
+    console.error('reporter lookup failed:', e.message);
+    return `משבצת ${slot}`;
+  }
+}
+
+// Everything the team needs to judge the report, pulled from the alert itself.
+async function alertContext(messageId){
+  try{
+    const doc = await db.collection('fake-hunting-messages').doc(messageId).get();
+    if(!doc.exists) return {};
+    const data = doc.data();
+    const text = String(data.text || '').replace(/https?:\/\/\S+/g, '');
+    const claim = text.split(/\n\s*Debunk\s*:/i)[0].replace(/^\s*\[.*?\]\s*/, '').trim();
+    return { claim, postUrl: data.post_url || '', sourceUrl: data.message_link || '' };
+  }catch(e){
+    console.error('alert lookup failed:', e.message);
+    return {};
+  }
+}
+
+function networkOf(url){
+  const u = String(url || '').toLowerCase();
+  if(/twitter\.com|\/\/x\.com/.test(u)) return 'x';
+  if(u.includes('facebook.com')) return 'facebook';
+  if(u.includes('instagram.com')) return 'instagram';
+  if(u.includes('tiktok.com')) return 'tiktok';
+  if(u.includes('youtube.com') || u.includes('youtu.be')) return 'youtube';
+  return '';
+}
+
+app.post('/feedback', async (req, res) => {
+  const origin = req.get('Origin');
+  if(origin && !ALLOWED_ORIGINS.includes(origin)) return res.status(204).end();
+
+  // Silently dropped rather than refused: a flood should not learn whether it
+  // is working, and a real volunteer never reaches this ceiling.
+  if(overLimit('feedback', clientIp(req))){
+    console.warn('feedback rate limited');
+    return res.status(204).end();
+  }
+
+  let body = {};
+  try{ body = JSON.parse(req.body || '{}'); }catch(e){ return res.status(204).end(); }
+
+  const messageId = typeof body.message_id === 'string' ? body.message_id.slice(0, 200) : '';
+  if(!messageId) return res.status(204).end();
+
+  const reasons = Array.isArray(body.reasons)
+    ? body.reasons.filter(r => Object.hasOwn(REPORT_REASONS, r)).slice(0, 6)
+    : [];
+  const note = typeof body.note === 'string' ? body.note.slice(0, 1000) : '';
+  if(!reasons.length && !note) return res.status(204).end();
+
+  const slot = /^\d{1,4}$/.test(String(body.recipient)) ? String(body.recipient) : '0';
+  const wording = typeof body.wording === 'string' ? body.wording.slice(0, 1000) : '';
+
+  // The write completes before the response: Cloud Run throttles CPU once a
+  // response is sent, and a lost report is invisible to the person who sent it.
+  try{
+    const [who, context] = await Promise.all([
+      reporterLabel(messageId, slot),
+      alertContext(messageId),
+    ]);
+
+    await db.collection(FEEDBACK).add({
+      messageId, slot, reasons, note, wording,
+      gender: typeof body.gender === 'string' ? body.gender.slice(0, 10) : '',
+      reportedBy: who,
+      claim: context.claim || '',
+      postUrl: context.postUrl || '',
+      sourceUrl: context.sourceUrl || '',
+      at: FieldValue.serverTimestamp(),
+    });
+
+    if(SHEET_ID){
+      // Firestore already has the report, so a sheet failure must not fail the
+      // request — it is a mirror, not the record.
+      try{
+        await appendReport(SHEET_ID, {
+          when: new Date().toLocaleString('he-IL', { timeZone: 'Asia/Jerusalem' }),
+          messageId,
+          reasons: reasons.map(r => REPORT_REASONS[r]).join(', '),
+          note,
+          reportedBy: who,
+          claim: context.claim || '',
+          wording,
+          postUrl: context.postUrl || '',
+          sourceUrl: context.sourceUrl || '',
+          network: networkOf(context.postUrl),
+          slot,
+        });
+      }catch(e){
+        console.error('sheet append failed (report is safe in Firestore):', e.message);
+      }
+    } else {
+      console.log('FEEDBACK_SHEET_ID is not set; report stored in Firestore only');
+    }
+
+    console.log(`problem report on ${messageId}: ${reasons.join(',') || '(note only)'}`);
+  }catch(err){
+    console.error('feedback error:', err.message);
   }
   res.status(204).end();
 });
