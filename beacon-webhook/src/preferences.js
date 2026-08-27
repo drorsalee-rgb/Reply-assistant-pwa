@@ -6,7 +6,7 @@
 const NETWORK_KEYWORDS = {
   // Hebrew keywords match anywhere (prefixes like ב־/ו־ are common);
   // latin ones must stand alone, so "ig" can't match inside another word.
-  x:         { hebrew: ['אקס', 'טוויטר', 'טויטר'], latin: ['x', 'twitter'] },
+  x:         { hebrew: ['איקס', 'אקס', 'טוויטר', 'טויטר'], latin: ['x', 'twitter'] },
   facebook:  { hebrew: ['פייסבוק', 'פייס'],        latin: ['facebook', 'fb'] },
   instagram: { hebrew: ['אינסטגרם', 'אינסטה'],     latin: ['instagram', 'insta', 'ig'] },
   tiktok:    { hebrew: ['טיקטוק', 'טיק טוק'],      latin: ['tiktok'] },
@@ -15,6 +15,10 @@ const NETWORK_KEYWORDS = {
 };
 
 const ALL_NETWORKS = Object.keys(NETWORK_KEYWORDS);
+// "הכל" — and joining without naming anything — covers the networks we
+// actually campaign on. YouTube and LinkedIn are recognised if someone asks
+// for them by name, but nobody is signed up for them by default.
+const DEFAULT_NETWORKS = ['x', 'facebook', 'instagram', 'tiktok'];
 const ALL_WORDS = ['הכל', 'הכול', 'כולם', 'כל הרשתות', 'all', 'everything'];
 const STOP_WORDS = ['הסר', 'הסירו', 'הסירי', 'עצור', 'עצרו', 'הפסק', 'הפסיקו',
                     'ביטול', 'בטל', 'בטלו', 'stop', 'unsubscribe', 'remove'];
@@ -39,7 +43,7 @@ function parseMessage(text){
   if(found.length) return { action: 'set', networks: found };
 
   if(ALL_WORDS.some(w => lower.includes(w))){
-    return { action: 'set', networks: [...ALL_NETWORKS] };
+    return { action: 'set', networks: [...DEFAULT_NETWORKS] };
   }
 
   // Someone just said hello, or wrote something we don't recognise. Joining
@@ -53,7 +57,7 @@ const NETWORK_HE = {
 };
 
 function networkNames(networks){
-  const list = networks && networks.length ? networks : ALL_NETWORKS;
+  const list = networks && networks.length ? networks : DEFAULT_NETWORKS;
   return list.map(n => NETWORK_HE[n] || n).join(', ');
 }
 
@@ -67,10 +71,25 @@ function confirmationMessage({ action, networks }, { isNew = false } = {}){
            'אם תשנה/י את דעתך, שלח/י לי הודעה עם שמות הרשתות שמעניינות אותך.';
   }
   const opening = isNew ? 'נרשמת להתראות על פייקים 🎯' : 'עודכן ✅';
-  const scope = (!networks || !networks.length || networks.length === ALL_NETWORKS.length)
-    ? 'תקבל/י התראות על **כל הרשתות**.'
+  const coversDefault = !networks || !networks.length
+    || DEFAULT_NETWORKS.every(n => networks.includes(n));
+  const scope = coversDefault
+    ? `תקבל/י התראות על **כל הרשתות**: ${networkNames(networks)}.`
     : `תקבל/י התראות על: **${networkNames(networks)}**.`;
   return `${opening}\n\n${scope}\n\n${HOW_TO_CHANGE}`;
 }
 
-module.exports = { parseMessage, confirmationMessage, networkNames, ALL_NETWORKS };
+// Someone whose message we could not parse has not asked to join — they may be
+// asking what this is. Registering them anyway and announcing "you are signed
+// up" is how a volunteer came to receive a fake-hunting alert she never
+// requested. Explain instead, and let the next message be the actual consent.
+function invitationMessage(){
+  return 'היי! אני הבוט של *יוריקי* 👋\n\n' +
+    'אני שולח למתנדבים התראות על פוסטים שמפיצים מידע כוזב, יחד עם הפרכה מוכנה ' +
+    'להעתקה — כדי שאפשר יהיה להגיב מהר.\n\n' +
+    'רוצה לקבל התראות? כתוב/כתבי לי אילו רשתות מעניינות אותך — למשל ' +
+    '"פייסבוק ואינסטגרם", או "הכל".\n\n' +
+    'לא רשמתי אותך לשום דבר עדיין.';
+}
+
+module.exports = { parseMessage, confirmationMessage, invitationMessage, networkNames, ALL_NETWORKS, DEFAULT_NETWORKS };
