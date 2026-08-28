@@ -115,4 +115,29 @@ async function summarisePost(postText, claim, rid = ''){
   }
 }
 
-module.exports = { summarisePost, buildSummaryPrompt, cleanSummary, hasSubject, MAX_CHARS };
+/**
+ * The summary to use for one alert.
+ *
+ * The fake-finding server's own sentence wins when it sends one, for the same
+ * reason its wordings do: it is written against the full post and the verified
+ * evidence, neither of which reaches us. It still has to name a subject — a
+ * summary opening with a bare pronoun reintroduces exactly the problem this
+ * replaced — and we generate our own when it doesn't.
+ *
+ * @returns {Promise<string|null>} null when there is nothing to show, and the
+ *   caller should fall back to the claim.
+ */
+async function resolvePostSummary(providedSummary, postText, claim, rid = ''){
+  const provided = String(providedSummary || '').trim();
+  if(provided){
+    if(hasSubject(provided)){
+      console.log(rid, 'using the upstream post summary');
+      return provided;
+    }
+    console.log(rid, 'upstream post summary has no subject; generating our own');
+  }
+  return summarisePost(postText, claim, rid);
+}
+
+module.exports = { summarisePost, resolvePostSummary, buildSummaryPrompt,
+  cleanSummary, hasSubject, MAX_CHARS };

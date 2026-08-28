@@ -18,7 +18,7 @@ const LOGOS = require('./logos');
 const beacon = require('./beacon');
 const { generateVariants } = require('./variants');
 const { checkPostClaims } = require('./grounding');
-const { summarisePost } = require('./postSummary');
+const { resolvePostSummary } = require('./postSummary');
 const notify = require('./notify');
 const { DEFAULT_NETWORKS } = require('./preferences');
 
@@ -705,7 +705,7 @@ function planBlocks(total, people){
   return { perPerson, servable: Math.min(people, Math.floor(total / perPerson)) };
 }
 
-async function variantsFor(messageId, debunk, people, maxChars, claim, postUrl, postText, provided){
+async function variantsFor(messageId, debunk, people, maxChars, claim, postUrl, postText, provided, postSummary){
   const wanted = people * WORDINGS_PER_PERSON;
   const ref = db.collection(DEBUNK_VARIANTS).doc(String(messageId).slice(0, 200));
   const existing = await ref.get();
@@ -720,11 +720,6 @@ async function variantsFor(messageId, debunk, people, maxChars, claim, postUrl, 
       if((data.perPerson || 1) === plan.perPerson) return plan.servable;
     }
   }
-
-  // What the PWA shows above the suggested reply. The engine's `claim` is an
-  // abstract proposition and often has no subject, so it is the fallback here
-  // rather than the first choice. Generated once per alert, not per recipient.
-  const postSummary = await summarisePost(cleanSnippet(postText), claim);
 
   // Wordings supplied by the fake-finding server take precedence over local
   // generation: they were written against the full post text, the verified
@@ -900,6 +895,12 @@ app.post('/api/broadcast-fake-hunting', async (req, res) => {
     const postText = String(body.post_text
       || (alertDoc && alertDoc.exists ? alertDoc.data().post_text : '')
       || '').slice(0, 2000);
+    // A one-sentence description of the post, written by the fake-finding
+    // server. Preferred over the one we generate: it is written against the
+    // full post and the verified evidence, neither of which reaches us.
+    const providedSummary = String(body.post_summary
+      || (alertDoc && alertDoc.exists ? alertDoc.data().post_summary : '')
+      || '').trim().slice(0, 300);
     // Pre-generated wordings from the fake-finding server, via the
     // orchestrator. Preferred over local generation whenever present.
     const providedVariants = body.debunk_variants
@@ -919,6 +920,13 @@ app.post('/api/broadcast-fake-hunting', async (req, res) => {
     const alertText = String(text).replace(/https?:\/\/\S+/g, '');
     const [claimPart, debunkPart] = alertText.split(/\n\s*Debunk\s*:/i);
     const claim = claimPart.replace(/^\s*\[.*?\]\s*/, '').trim();
+
+    // One sentence describing the post, with its subject named — shown in the
+    // WhatsApp alert and again at the top of the PWA. Resolved once here so
+    // both use the same words.
+    const postSummary = await resolvePostSummary(
+      providedSummary, cleanSnippet(postText), claim, rid);
+
     const debunk = (debunkPart || '').trim();
 
     // dry_run: the entire pipeline runs — selection, grounding, wording
@@ -956,7 +964,7 @@ app.post('/api/broadcast-fake-hunting', async (req, res) => {
     let servable = 0;
     if(debunk){
       try{
-        servable = await variantsFor(message_id, debunk, recipients.length, maxChars, claim, postUrl, postText, providedVariants);
+        servable = await variantsFor(message_id, debunk, recipients.length, maxChars, claim, postUrl, postText, providedVariants, postSummary);
       }catch(e){
         console.error(rid, 'variant generation failed:', e.message);
       }
@@ -991,8 +999,12 @@ app.post('/api/broadcast-fake-hunting', async (req, res) => {
       const base = `${DEBUNK_PWA_URL}/?message_id=${encodeURIComponent(message_id)}`;
       return variantCount ? `${base}&v=${index}` : base;
     };
+    // The claim is the fallback here for the same reason it is in the PWA: it
+    // is an abstract proposition and frequently has no subject, so on its own
+    // it doesn't tell the reader what they are being asked to reply to.
+    const alertLine = truncate(postSummary || claim);
     const messageFor = index =>
-      `🔍 זוהה פוסט מטעה שכדאי להפריך 👇\n\n${truncate(claim)}\n\n`
+      `🔍 זוהה פוסט מטעה שכדאי להפריך 👇\n\n${alertLine}\n\n`
       + `לחצו כאן להפרכה מוכנה:\n${linkFor(index)}`;
     if(dryRun){
       return respond(200, {
@@ -1001,7 +1013,13 @@ app.post('/api/broadcast-fake-hunting', async (req, res) => {
         would_send_to: recipients.length,
         variants: variantCount,
         wordings_needed: FAKE_HUNT_N * WORDINGS_PER_PERSON,
-        network: network || null
+        network: network || null,
+        // The line recipients would actually read, so a dry run shows whether
+        // the summary arrived, was generated, or fell back to the claim.
+        alert_line: alertLine,
+        post_summary_source: providedSummary && postSummary === providedSummary
+          ? 'upstream'
+          : (postSummary ? 'generated' : 'claim_fallback')
       });
     }
 
