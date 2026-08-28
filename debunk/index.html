@@ -325,7 +325,7 @@
 
   <div class="context-wrap" id="contextWrap">
     <p class="section-label">
-      <span>הטענה בפוסט</span>
+      <span>הפוסט שאליו מגיבים</span>
       <span class="social-icon" id="summaryIcon" hidden></span>
     </p>
     <div class="context" id="context">
@@ -442,7 +442,7 @@ const els = {
   reportSend: document.getElementById('reportSend')
 };
 
-const PAGE = { claim: '', debunk: '', postUrl: null, sourceUrl: null, network: null };
+const PAGE = { claim: '', postSummary: '', debunk: '', postUrl: null, sourceUrl: null, network: null };
 
 // Each recipient's link carries a variant index, so the people drawn for one
 // alert don't all post the identical sentence.
@@ -576,7 +576,9 @@ async function loadVariants(){
         perPerson: perPerson || 1,
         // Our own copy of the offending post's URL, in case the alert
         // document doesn't carry one.
-        postUrl: fields.postUrl && fields.postUrl.stringValue
+        postUrl: fields.postUrl && fields.postUrl.stringValue,
+        // One sentence describing the post, with its subject named.
+        postSummary: fields.postSummary && fields.postSummary.stringValue
       };
     }
     // Alerts generated before gendered variants existed.
@@ -621,9 +623,21 @@ function saveGender(gender){
 }
 
 function renderContext(){
-  els.context.innerHTML = PAGE.claim
-    ? `<span>${PAGE.claim}</span>`
-    : '<span class="placeholder">לא התקבלו פרטי הפוסט.</span>';
+  // The summary describes the post itself and names its subject. The claim is
+  // the fallback: it is written as an abstract proposition and often arrives
+  // with no subject at all, which is what this replaced.
+  const text = PAGE.postSummary || PAGE.claim;
+  els.context.textContent = '';
+  const span = document.createElement('span');
+  if(text){
+    // Built from the offending post's own text, so it is attacker-authored.
+    // textContent, never innerHTML.
+    span.textContent = text;
+  }else{
+    span.className = 'placeholder';
+    span.textContent = 'לא התקבלו פרטי הפוסט.';
+  }
+  els.context.appendChild(span);
 }
 
 // X rejects replies over 280 characters, so show the count when it matters.
@@ -863,6 +877,7 @@ async function init(){
 
   const loaded = await loadVariants();
   if(!PAGE.postUrl && loaded.postUrl) PAGE.postUrl = loaded.postUrl;
+  PAGE.postSummary = loaded.postSummary || '';
   PAGE.network = networkFromUrl(PAGE.postUrl || '');
 
   const slot = Number.isInteger(variantIndex) && variantIndex >= 0 ? variantIndex : 0;
