@@ -19,6 +19,7 @@ const beacon = require('./beacon');
 const { generateVariants } = require('./variants');
 const { checkPostClaims } = require('./grounding');
 const { summarisePost } = require('./postSummary');
+const notify = require('./notify');
 const { DEFAULT_NETWORKS } = require('./preferences');
 
 const db = new Firestore();
@@ -1132,6 +1133,31 @@ app.get('/api/check-whatsapp', async (req, res) => {
 
   await ref.set({ connected, checkedAt: FieldValue.serverTimestamp() }, { merge: true });
   res.json({ ok: true, connected, changed: connected !== wasConnected });
+});
+
+// Operator-to-operator messages, to a fixed allowlist. See src/notify.js for
+// why the recipients are pinned rather than passed in freely.
+app.post('/api/notify', async (req, res) => {
+  const rid = requestId();
+  const checked = notify.validate(req.body);
+  if(!checked.ok){
+    console.log(rid, 'notify refused:', checked.error);
+    return res.status(checked.status).json({ error: checked.error });
+  }
+
+  const results = [];
+  for(const phone of checked.phones){
+    const label = notify.phoneLabel(phone);
+    try{
+      await beacon.sendMessage({ phoneNumbers: [phone], message: checked.message });
+      console.log(rid, `notify sent to ${label}`);
+      results.push({ phone: label, ok: true });
+    }catch(e){
+      console.error(rid, `notify to ${label} failed:`, e.message);
+      results.push({ phone: label, ok: false, error: e.message });
+    }
+  }
+  res.json({ ok: results.every(r => r.ok), results });
 });
 
 app.get('/healthz', (req, res) => res.json({ ok: true }));

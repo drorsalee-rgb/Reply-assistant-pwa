@@ -5,7 +5,8 @@
   "description": "Receives broadcast triggers and sends Signal messages containing reply-assistant PWA links",
   "main": "src/index.js",
   "scripts": {
-    "start": "node src/index.js"
+    "start": "node src/index.js",
+    "test": "node --test test/*.test.mjs"
   },
   "engines": {
     "node": ">=20"
