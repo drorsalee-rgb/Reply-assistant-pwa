@@ -789,15 +789,54 @@ function renderSource(){
 // schemes trigger an "Open in X?" dialog every time.
 //
 // ANDROID: the plain post URL. Two volunteers (Samsung + Pixel, X app
-// installed) got the intent as a bare draft composer — no thread context, no
-// scrolling up to the post, and no visible "Replying to", so posting risked
-// a standalone tweet instead of a reply. The plain URL opens the app on the
-// post itself; the reader taps reply and pastes from the clipboard.
+// installed) got the intent as a bare draft composer — no thread context and
+// no visible "Replying to", so posting risked a standalone tweet instead of a
+// reply. The plain URL opens the app on the post; the reader taps reply and
+// pastes from the clipboard.
+//
+// ANDROID, UNDER TEST: ?x=intent and ?x=intentat opt into an Android
+// intent:// URL, which is how a WEB page reaches a custom scheme on Android —
+// Ilan's twitter://post suggestion was written for a native app, where
+// ActivityNotFoundException provides the fallback; from a page that hook does
+// not exist, and S.browser_fallback_url is the equivalent. `intentat` also
+// prefixes the author's @handle, which Ilan says the custom scheme needs to
+// thread the reply. Both need a real Android device to judge, so they stay
+// opt-in rather than shipped to volunteers untested.
+function xPostParts(){
+  const m = String(PAGE.postUrl || '').match(/(?:twitter\.com|x\.com)\/([A-Za-z0-9_]+)\/status\/(\d+)/i);
+  return m ? { handle: m[1], id: m[2] } : null;
+}
+
+// intent://…#Intent;scheme=twitter;package=com.twitter.android;
+// S.browser_fallback_url=<web url>;end
+// Chrome hands this to the X app when installed and follows the fallback URL
+// when it is not — no dialog, and no dead end.
+function androidIntentUrl(id, text){
+  const fallback = 'https://x.com/intent/tweet?in_reply_to=' + id + '&text=' + encodeURIComponent(text);
+  return 'intent://post?in_reply_to=' + id + '&text=' + encodeURIComponent(text)
+    + '#Intent;scheme=twitter;package=com.twitter.android'
+    + ';S.browser_fallback_url=' + encodeURIComponent(fallback) + ';end';
+}
+
 function openPost(){
-  const m = String(PAGE.postUrl || '').match(/(?:twitter\.com|x\.com)\/[A-Za-z0-9_]+\/status\/(\d+)/i);
+  const parts = xPostParts();
+  if(!parts){
+    window.location.href = PAGE.postUrl;
+    return;
+  }
   const isAndroid = /android/i.test(navigator.userAgent);
-  if(m && !isAndroid){
-    window.location.href = 'https://x.com/intent/tweet?in_reply_to=' + m[1]
+  const mode = new URLSearchParams(location.search).get('x');
+
+  if(isAndroid && (mode === 'intent' || mode === 'intentat')){
+    const text = mode === 'intentat'
+      ? '@' + parts.handle + ' ' + replyText()
+      : replyText();
+    window.location.href = androidIntentUrl(parts.id, text);
+    return;
+  }
+
+  if(!isAndroid){
+    window.location.href = 'https://x.com/intent/tweet?in_reply_to=' + parts.id
       + '&text=' + encodeURIComponent(replyText());
     return;
   }
