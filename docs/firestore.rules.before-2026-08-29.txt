@@ -1,0 +1,40 @@
+=== ruleset f73993ec-4099-4e6b-b3a2-8cbb9d736908 ===
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // This rule allows anyone with your Firestore database reference to view, edit,
+    // and delete all data in your Firestore database. It is useful for getting
+    // started, but it is configured to expire after 30 days because it
+    // leaves your app open to attackers. At that time, all client
+    // requests to your Firestore database will be denied.
+    //
+    // Make sure to write security rules for your app before that time, or else
+    // all client requests to your Firestore database will be denied until you Update
+    // your rules
+    match /{document=**} {
+      allow read, write: if request.time < timestamp.date(2027, 9, 4);
+    }
+  }
+}
+=== ruleset 564dc54e-9b13-4e44-bfe4-c640ccf90d2e ===
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Live (default) rules (dumped 2026-08-25) allow all client access until 2027-09-04.
+    // default1 only holds the three copied collections. Match that same client
+    // access window for these paths; deny everything else on this database.
+    match /reaction_dashboard_counts/{document=**} {
+      allow read, write: if request.time < timestamp.date(2027, 9, 4);
+    }
+    match /prompt-constants/{document=**} {
+      allow read, write: if request.time < timestamp.date(2027, 9, 4);
+    }
+    match /prompt-constants_staging/{document=**} {
+      allow read, write: if request.time < timestamp.date(2027, 9, 4);
+    }
+  }
+}
+
