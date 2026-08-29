@@ -55,7 +55,11 @@
     max-width:420px;
     min-height:100vh;
     min-height:100dvh;
-    padding:20px;
+    /* WhatsApp's in-app browser floats its address bar OVER the page instead of
+       reserving space for it, so whatever sits last — the red report button —
+       ends up underneath it even once the page scrolls. env(safe-area-inset-*)
+       does not cover an app's own chrome, so reserve the room outright. */
+    padding:20px 20px calc(76px + env(safe-area-inset-bottom, 0px));
     display:flex;
     flex-direction:column;
     gap:14px;
@@ -125,12 +129,29 @@
     border-radius:14px;
     padding:14px 16px;
     flex:none;
+    /* Capped so a long summary cannot push the reply and the buttons off the
+       screen. It is context; the reply below is the thing being used. */
+    max-height:18vh;
+    overflow-y:auto;
+    overscroll-behavior:contain;
   }
   .context .placeholder{ color:#7ea3aa; font-style:italic; }
   /* The summary is context; the reply below is the thing being used. Cap the
      summary so a long one cannot squeeze the reply into a few lines. */
 
   .card-wrap{ position:relative; display:flex; flex-direction:column; flex:none; }
+  /* Without this a reader cannot tell there is more text below — half of the
+     original "I can't scroll" report was simply not knowing. */
+  .card-wrap .scroll-hint{
+    position:absolute; left:0; right:0; bottom:0;
+    height:46px; border-radius:0 0 18px 18px;
+    background:linear-gradient(to bottom, rgba(18,54,66,0), var(--card-bg) 80%);
+    display:flex; align-items:flex-end; justify-content:center;
+    padding-bottom:6px; font-size:13px; color:#8aa097;
+    pointer-events:none; opacity:0; transition:opacity .18s ease;
+  }
+  .card-wrap.can-scroll .scroll-hint{ opacity:1; }
+  .card-wrap.scrolled-to-end .scroll-hint{ opacity:0; }
   .card{
     position:relative;
     background:var(--card-bg);
@@ -162,6 +183,15 @@
     margin:0;
     padding:22px 20px;
     color:#eaf6f8;
+    /* The font stays at 24px — shrinking it to fit made it unreadable for
+       older volunteers. A long reply scrolls inside the card instead, so the
+       card cannot grow until it pushes the buttons off the screen.
+       This inner scroll is only usable now that a vertical drag is no longer
+       swallowed by the sideways swipe handler; that was the original
+       "I can't scroll" report. */
+    max-height:32vh;
+    overflow-y:auto;
+    overscroll-behavior:contain;
   }
 
   .quote-text.placeholder{ color:#7ea3aa; font-style:italic; font-size:17px; font-weight:500; }
@@ -316,7 +346,7 @@
   .btn-cancel{ background:transparent; border:1px solid #3a4d52; color:#8aa097; }
 
   @media (max-height: 700px){
-    .screen{ padding:12px 16px; gap:10px; }
+    .screen{ padding:12px 16px calc(76px + env(safe-area-inset-bottom, 0px)); gap:10px; }
     .card-wrap{ min-height:170px; }
     .btn-accept{ padding:13px 20px; }
     .btn-decline{ padding:9px 20px; }
@@ -348,6 +378,7 @@
       <div class="card-header">ההפרכה שלך</div>
       <p class="quote-text placeholder" id="quoteText">טוען…</p>
     </div>
+    <div class="scroll-hint" aria-hidden="true">גללו לקריאת ההמשך ↓</div>
     <p class="length-badge" id="lengthBadge" hidden></p>
   </div>
 
@@ -429,6 +460,7 @@ const messageId = safeDecode(
 const els = {
   context: document.getElementById('context'),
   summaryIcon: document.getElementById('summaryIcon'),
+  cardWrap: document.querySelector('.card-wrap'),
   socialIcon: document.getElementById('socialIcon'),
   card: document.getElementById('card'),
   quoteText: document.getElementById('quoteText'),
@@ -684,11 +716,28 @@ function renderDebunk(){
     els.quoteText.textContent = replyText();
     els.acceptBtn.disabled = false;
     renderLength();
+    refreshScrollHint();
   } else {
     els.quoteText.classList.add('placeholder');
     els.quoteText.textContent = 'לא נמצאה הפרכה עבור הפוסט הזה.';
     els.acceptBtn.disabled = true;
   }
+}
+
+// The reply scrolls inside its card. Say so when there is more to read, and
+// stop saying it once the reader reaches the end.
+function refreshScrollHint(){
+  const el = els.quoteText, wrap = els.cardWrap;
+  if(!el || !wrap) return;
+  const more = el.scrollHeight > el.clientHeight + 8;
+  wrap.classList.toggle('can-scroll', more);
+  const atEnd = el.scrollTop + el.clientHeight >= el.scrollHeight - 4;
+  wrap.classList.toggle('scrolled-to-end', atEnd);
+}
+
+function watchQuoteScroll(){
+  if(els.quoteText) els.quoteText.addEventListener('scroll', refreshScrollHint, { passive: true });
+  window.addEventListener('resize', refreshScrollHint);
 }
 
 function renderSource(){
@@ -930,6 +979,8 @@ async function init(){
   renderDebunk();
   renderSource();
   renderNetworkIcons();
+  watchQuoteScroll();
+  refreshScrollHint();
   track('open');
 }
 
