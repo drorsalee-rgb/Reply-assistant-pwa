@@ -770,57 +770,28 @@ function renderSource(){
 
 /* ---------- actions ---------- */
 
-// Where "open" should actually take the reader — and it differs by device.
+// Where "open" should actually take the reader — it differs by device.
 //
 // DESKTOP: X's web intent (/intent/post?in_reply_to=<id>&text=…) opens the
-// reply composer with the reply prefilled. Verified working on the Mac.
+// reply composer with the reply prefilled. Verified on the Mac.
 //
-// PHONES: the same intent URL is NOT claimed by the X app's universal links,
-// so it opens as a plain web page — and inside WhatsApp's browser or a fresh
-// Safari the reader is not signed in to x.com (their login lives in the app),
-// so they hit a login wall. Reported from an iPhone on 2026-08-29. There is
-// also no app deep link that both replies AND prefills text.
-//
-// So on phones the button opens the app's own deep link to the post
-// (twitter://status?id=…), which lands ON the post — not the feed the
-// universal link sometimes fell to — and the reader pastes the copied reply.
-// If the app is not installed, nothing happens for a beat and we fall back to
-// the web URL.
-function xStatusId(){
-  const m = String(PAGE.postUrl || '').match(/(?:twitter\.com|x\.com)\/[A-Za-z0-9_]+\/status\/(\d+)/i);
-  return m ? m[1] : null;
-}
-
-const IS_PHONE = /android|iphone|ipad|ipod/i.test(navigator.userAgent);
-
+// PHONES: the plain post URL. The X app claims it as a universal link and
+// opens ON the post, silently — the reader taps reply and pastes. Both
+// alternatives tried and rejected on a real iPhone (2026-08-29):
+//   - the intent URL is NOT claimed by the app, so it opened as a web page
+//     where the reader is not signed in — a login wall;
+//   - twitter://status?id=… lands on the post too, but iOS interposes an
+//     "Open in X?" dialog EVERY time (custom schemes are never remembered),
+//     which costs the same tap the intent was meant to save.
 function openPost(){
-  const id = xStatusId();
-  if(!id){
-    window.location.href = PAGE.postUrl;
-    return;
-  }
-  if(!IS_PHONE){
-    window.location.href = 'https://x.com/intent/post?in_reply_to=' + id
+  const id = String(PAGE.postUrl || '').match(/(?:twitter\.com|x\.com)\/[A-Za-z0-9_]+\/status\/(\d+)/i);
+  const isPhone = /android|iphone|ipad|ipod/i.test(navigator.userAgent);
+  if(id && !isPhone){
+    window.location.href = 'https://x.com/intent/post?in_reply_to=' + id[1]
       + '&text=' + encodeURIComponent(replyText());
     return;
   }
-  // iOS puts an "Open in X?" dialog between the tap and the app, and an older
-  // reader can easily sit on it for several seconds — during which this page
-  // stays visible. A short fallback would fire mid-dialog and drag them to the
-  // web login wall on top of the app. So: generous timeout, and any signal
-  // that the dialog or the app took focus (blur / hidden / pagehide) cancels.
-  const fallback = setTimeout(() => {
-    if(document.visibilityState === 'visible'){
-      window.location.href = PAGE.postUrl;
-    }
-  }, 3000);
-  const cancel = () => clearTimeout(fallback);
-  window.addEventListener('pagehide', cancel, { once: true });
-  window.addEventListener('blur', cancel, { once: true });
-  document.addEventListener('visibilitychange', () => {
-    if(document.visibilityState === 'hidden') cancel();
-  }, { once: true });
-  window.location.href = 'twitter://status?id=' + id;
+  window.location.href = PAGE.postUrl;
 }
 
 els.acceptBtn.addEventListener('click', async () => {
