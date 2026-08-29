@@ -772,22 +772,24 @@ function renderSource(){
 
 // Where "open" should actually take the reader.
 //
-// X posts use the /intent/tweet web intent, on every device. Unlike
-// /intent/post (login wall on phones — not claimed by the app) and
-// twitter:// custom schemes ("Open in X?" dialog every time), the legacy
-// intent/tweet URL IS claimed by the app's universal links: verified on an
-// iPhone on 2026-08-29, it opens the app's reply composer silently, and
-// falls back to the browser when the app is not installed.
+// X posts: it depends on the platform, and every branch here was set by
+// testing on real devices — do not "simplify" this without re-testing.
 //
-// The reply text is prefilled, so the reader posts with one tap instead of
-// pasting. Known trade-off, accepted deliberately: the composer does not
-// show the post being answered. The PWA screen they just came from shows the
-// post's summary, and the clipboard still carries the reply as a safety net.
+// DESKTOP + iOS: the /intent/tweet web intent. The X iOS app claims it as a
+// universal link and opens its reply composer on the right post, thread
+// context visible above, reply prefilled (verified on an iPhone 13 Pro Max,
+// 2026-08-29). /intent/post is NOT claimed (login wall) and twitter://
+// schemes trigger an "Open in X?" dialog every time.
 //
-// Other networks have no such intent and keep the plain post URL.
+// ANDROID: the plain post URL. Two volunteers (Samsung + Pixel, X app
+// installed) got the intent as a bare draft composer — no thread context, no
+// scrolling up to the post, and no visible "Replying to", so posting risked
+// a standalone tweet instead of a reply. The plain URL opens the app on the
+// post itself; the reader taps reply and pastes from the clipboard.
 function openPost(){
   const m = String(PAGE.postUrl || '').match(/(?:twitter\.com|x\.com)\/[A-Za-z0-9_]+\/status\/(\d+)/i);
-  if(m){
+  const isAndroid = /android/i.test(navigator.userAgent);
+  if(m && !isAndroid){
     window.location.href = 'https://x.com/intent/tweet?in_reply_to=' + m[1]
       + '&text=' + encodeURIComponent(replyText());
     return;

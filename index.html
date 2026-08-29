@@ -1225,7 +1225,12 @@ els.acceptBtn.addEventListener('click', async () => {
   // user a second, gesture-backed way to open the post.
   if(PAGE_CONTEXT.postUrl){
     const m = String(PAGE_CONTEXT.postUrl).match(/(?:twitter\.com|x\.com)\/[A-Za-z0-9_]+\/status\/(\d+)/i);
-    const url = m
+    // Android gets the plain URL: on Samsung and Pixel the X app rendered the
+    // intent as a bare draft — no thread context and no visible "Replying to",
+    // risking a standalone tweet. See the debunk PWA's openPost for the full
+    // per-platform story; keep the two in step.
+    const isAndroid = /android/i.test(navigator.userAgent);
+    const url = (m && !isAndroid)
       ? 'https://x.com/intent/tweet?in_reply_to=' + m[1] + '&text=' + encodeURIComponent(currentText)
       : PAGE_CONTEXT.postUrl;
     setTimeout(() => { window.location.href = url; }, TALLY_PAUSE_MS);
