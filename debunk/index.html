@@ -779,64 +779,39 @@ function renderSource(){
 
 // Where "open" should actually take the reader.
 //
-// X posts: it depends on the platform, and every branch here was set by
-// testing on real devices — do not "simplify" this without re-testing.
+// X posts: it depends on the platform, and every branch was settled by testing
+// on real devices. Do not "simplify" this without re-testing on each.
 //
-// DESKTOP + iOS: the /intent/tweet web intent. The X iOS app claims it as a
+// DESKTOP + iOS — the /intent/tweet web intent. The X iOS app claims it as a
 // universal link and opens its reply composer on the right post, thread
-// context visible above, reply prefilled (verified on an iPhone 13 Pro Max,
-// 2026-08-29). /intent/post is NOT claimed (login wall) and twitter://
-// schemes trigger an "Open in X?" dialog every time.
+// context visible above, reply prefilled. Verified on a Mac and an
+// iPhone 13 Pro Max, 2026-08-29.
 //
-// ANDROID: the plain post URL. Two volunteers (Samsung + Pixel, X app
-// installed) got the intent as a bare draft composer — no thread context and
-// no visible "Replying to", so posting risked a standalone tweet instead of a
-// reply. The plain URL opens the app on the post; the reader taps reply and
-// pastes from the clipboard.
+// ANDROID — the plain post URL. The X Android app IGNORES in_reply_to, and
+// four different ways of asking were tried on real hardware before settling:
 //
-// ANDROID, UNDER TEST: ?x=intent and ?x=intentat opt into an Android
-// intent:// URL, which is how a WEB page reaches a custom scheme on Android —
-// Ilan's twitter://post suggestion was written for a native app, where
-// ActivityNotFoundException provides the fallback; from a page that hook does
-// not exist, and S.browser_fallback_url is the equivalent. `intentat` also
-// prefixes the author's @handle, which Ilan says the custom scheme needs to
-// thread the reply. Both need a real Android device to judge, so they stay
-// opt-in rather than shipped to volunteers untested.
-function xPostParts(){
-  const m = String(PAGE.postUrl || '').match(/(?:twitter\.com|x\.com)\/([A-Za-z0-9_]+)\/status\/(\d+)/i);
-  return m ? { handle: m[1], id: m[2] } : null;
-}
-
-// intent://…#Intent;scheme=twitter;package=com.twitter.android;
-// S.browser_fallback_url=<web url>;end
-// Chrome hands this to the X app when installed and follows the fallback URL
-// when it is not — no dialog, and no dead end.
-function androidIntentUrl(id, text){
-  const fallback = 'https://x.com/intent/tweet?in_reply_to=' + id + '&text=' + encodeURIComponent(text);
-  return 'intent://post?in_reply_to=' + id + '&text=' + encodeURIComponent(text)
-    + '#Intent;scheme=twitter;package=com.twitter.android'
-    + ';S.browser_fallback_url=' + encodeURIComponent(fallback) + ';end';
-}
-
+//   https://x.com/intent/tweet   -> bare composer, no "Replying to"
+//   intent://post ... (scheme=twitter, package=com.twitter.android)
+//                                -> bare composer, no "Replying to"
+//   the same with "@author " prefixed to the text
+//                                -> the handle appears as plain text in the
+//                                   body; still no "Replying to"
+//   twitter://status?id=         -> lands on the post, but iOS shows an
+//                                   "Open in X?" dialog every time and it
+//                                   opens no composer
+//
+// A composer with no "Replying to" is not merely worse — posting from it
+// publishes a STANDALONE TWEET instead of a reply, which is the one outcome
+// this whole flow exists to avoid. So Android opens the post itself: the app
+// lands on it, the reader taps reply and pastes from the clipboard, which is
+// filled on every platform regardless.
+//
+// Other networks have no reply intent at all and keep the plain post URL.
 function openPost(){
-  const parts = xPostParts();
-  if(!parts){
-    window.location.href = PAGE.postUrl;
-    return;
-  }
+  const m = String(PAGE.postUrl || '').match(/(?:twitter\.com|x\.com)\/[A-Za-z0-9_]+\/status\/(\d+)/i);
   const isAndroid = /android/i.test(navigator.userAgent);
-  const mode = new URLSearchParams(location.search).get('x');
-
-  if(isAndroid && (mode === 'intent' || mode === 'intentat')){
-    const text = mode === 'intentat'
-      ? '@' + parts.handle + ' ' + replyText()
-      : replyText();
-    window.location.href = androidIntentUrl(parts.id, text);
-    return;
-  }
-
-  if(!isAndroid){
-    window.location.href = 'https://x.com/intent/tweet?in_reply_to=' + parts.id
+  if(m && !isAndroid){
+    window.location.href = 'https://x.com/intent/tweet?in_reply_to=' + m[1]
       + '&text=' + encodeURIComponent(replyText());
     return;
   }
