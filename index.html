@@ -64,6 +64,11 @@
     align-items:stretch;
     gap:14px;
     padding:max(20px, env(safe-area-inset-top)) 20px max(20px, env(safe-area-inset-bottom));
+    /* Safety valve: when the parts add up to more than the viewport,
+       body{overflow:hidden} clips the bottom instead of letting the reader
+       reach it. Scroll the column rather than swallowing its own end. */
+    overflow-y:auto;
+    overscroll-behavior:contain;
   }
 
   .style-bar{
