@@ -770,6 +770,27 @@ function renderSource(){
 
 /* ---------- actions ---------- */
 
+// Where "open" should actually take the reader.
+//
+// Navigating to the post URL behaves differently per device: on desktop the
+// web page lands on the post with the reply box focused, but on iPhone the X
+// app intercepts the link and often opens on the FEED, leaving the reader to
+// find the post themselves — one click short, as reported from an
+// iPhone 13 Pro Max on 2026-08-29.
+//
+// X's web intent solves both: /intent/post?in_reply_to=<id> opens the reply
+// composer directly, and the app handles it the same way. The reply text is
+// prefilled as well, so on X the reader usually does not even need to paste —
+// the clipboard copy stays as the safety net. Other networks have no such
+// intent, so they keep the plain post URL.
+function openTarget(){
+  const url = PAGE.postUrl || '';
+  const m = url.match(/(?:twitter\.com|x\.com)\/[A-Za-z0-9_]+\/status\/(\d+)/i);
+  if(!m) return url;
+  return 'https://x.com/intent/post?in_reply_to=' + m[1]
+    + '&text=' + encodeURIComponent(replyText());
+}
+
 els.acceptBtn.addEventListener('click', async () => {
   try{
     await navigator.clipboard.writeText(replyText());
@@ -786,7 +807,7 @@ els.acceptBtn.addEventListener('click', async () => {
   track('copy_open');
 
   if(PAGE.postUrl){
-    const url = PAGE.postUrl;
+    const url = openTarget();
     setTimeout(() => { window.location.href = url; }, 350);
     setTimeout(() => {
       if(document.visibilityState === 'visible'){
