@@ -189,20 +189,28 @@
        This inner scroll is only usable now that a vertical drag is no longer
        swallowed by the sideways swipe handler; that was the original
        "I can't scroll" report. */
-    max-height:32vh;
+    max-height:27vh;
     overflow-y:auto;
     overscroll-behavior:contain;
   }
 
   .quote-text.placeholder{ color:#7ea3aa; font-style:italic; font-size:17px; font-weight:500; }
 
-  .actions{ display:flex; flex-direction:column; gap:10px; flex:none; }
+  /* The controls used to stack seven full-width rows and take ~320px, which is
+   what pushed the report button off the screen. Same functions, fewer rows:
+   the two closing buttons share a line, and the paste hint carries the source
+   link instead of owning a line of its own. */
+.actions{ display:flex; flex-direction:column; gap:8px; flex:none; }
+  .closing-row{ display:flex; gap:8px; }
+  .closing-row .btn-decline{ flex:1; }
+  /* The report button stays the wider half: it was made prominent on purpose. */
+  .closing-row .btn-report{ flex:1.4; }
   .btn-accept{
     background:var(--accent);
     color:var(--accent-ink);
     font-weight:700;
     font-size:17px;
-    padding:17px 20px;
+    padding:15px 20px;
     border-radius:16px;
     display:flex;
     align-items:center;
@@ -213,9 +221,10 @@
   .btn-accept:active{ transform:scale(0.97); }
   .btn-accept.done{ background:var(--good); color:#0e1f15; }
   .btn-accept:disabled{ background:#3a4d52; color:#7c9499; pointer-events:none; }
-  .hint{ margin:0; text-align:center; font-size:13.5px; color:#8aa097; }
+  .hint{ margin:0; text-align:center; font-size:13px; color:#8aa097; line-height:1.45; }
   .hint a{ color:var(--gold); text-decoration:underline; font-weight:700; }
-  .source{ margin:0; text-align:center; font-size:13.5px; }
+  .source[hidden], #hintSep[hidden]{ display:none; }
+  .hint a{ color:var(--gold); text-decoration:underline; font-weight:700; }
   .source a{ color:var(--gold); text-decoration:underline; font-weight:600; }
   .btn-decline{
     background:transparent;
@@ -223,7 +232,7 @@
     color:#8aa097;
     font-weight:600;
     font-size:15px;
-    padding:11px 20px;
+    padding:10px 16px;
     border-radius:14px;
   }
   .btn-decline:active{ transform:scale(0.97); }
@@ -233,7 +242,7 @@
     color:#bfe6ee;
     font-weight:600;
     font-size:14.5px;
-    padding:10px 20px;
+    padding:8px 16px;
     border-radius:14px;
   }
   .btn-rephrase:active{ transform:scale(0.97); }
@@ -265,7 +274,7 @@
     color:#bfe6ee;
     font-weight:600;
     font-size:14px;
-    padding:7px 18px;
+    padding:6px 16px;
     border-radius:12px;
   }
   .gender-btn.selected{
@@ -280,7 +289,7 @@
     color:#fff;
     font-weight:700;
     font-size:15.5px;
-    padding:13px 20px;
+    padding:10px 16px;
     border-radius:14px;
     display:flex;
     align-items:center;
@@ -397,12 +406,13 @@
       <span class="wording-counter" id="wordingCounter"></span>
       <button class="btn-rephrase" id="nextWording">נסח אחר ›</button>
     </div>
-    <p class="hint" id="hint">הדבק את ההפרכה כתגובה אחרי פתיחה</p>
-    <p class="source" id="source" hidden></p>
-    <button class="btn-decline" id="declineBtn">לא, תודה</button>
-    <button class="btn-report" id="reportBtn">
-      <span aria-hidden="true">⚠</span><span id="reportLabel">יש בעיה עם זה</span>
-    </button>
+    <p class="hint" id="hint">הדבק את ההפרכה כתגובה אחרי פתיחה<span id="hintSep" hidden> · </span><span class="source" id="source" hidden></span></p>
+    <div class="closing-row">
+      <button class="btn-decline" id="declineBtn">לא, תודה</button>
+      <button class="btn-report" id="reportBtn">
+        <span aria-hidden="true">⚠</span><span id="reportLabel">יש בעיה עם זה</span>
+      </button>
+    </div>
   </div>
 </div>
 
@@ -741,9 +751,21 @@ function watchQuoteScroll(){
 }
 
 function renderSource(){
-  if(!PAGE.sourceUrl){ els.source.hidden = true; return; }
-  els.source.innerHTML = `<a href="${PAGE.sourceUrl}" target="_blank" rel="noopener">מקור ההפרכה</a>`;
+  const sep = document.getElementById('hintSep');
+  if(!PAGE.sourceUrl){
+    els.source.hidden = true;
+    if(sep) sep.hidden = true;
+    return;
+  }
+  els.source.textContent = '';
+  const a = document.createElement('a');
+  a.href = PAGE.sourceUrl;
+  a.target = '_blank';
+  a.rel = 'noopener';
+  a.textContent = 'מקור ההפרכה';
+  els.source.appendChild(a);
   els.source.hidden = false;
+  if(sep) sep.hidden = false;
 }
 
 /* ---------- actions ---------- */
