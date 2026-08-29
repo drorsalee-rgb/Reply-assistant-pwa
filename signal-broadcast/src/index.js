@@ -20,6 +20,7 @@ const { generateVariants } = require('./variants');
 const { checkPostClaims } = require('./grounding');
 const { resolvePostSummary } = require('./postSummary');
 const notify = require('./notify');
+const { shorten } = require('./shortLinks');
 const { DEFAULT_NETWORKS } = require('./preferences');
 
 const db = new Firestore();
@@ -705,7 +706,7 @@ function planBlocks(total, people){
   return { perPerson, servable: Math.min(people, Math.floor(total / perPerson)) };
 }
 
-async function variantsFor(messageId, debunk, people, maxChars, claim, postUrl, postText, provided, postSummary){
+async function variantsFor(messageId, debunk, people, maxChars, claim, postUrl, postText, provided, postSummary, sourceShort){
   const wanted = people * WORDINGS_PER_PERSON;
   const ref = db.collection(DEBUNK_VARIANTS).doc(String(messageId).slice(0, 200));
   const existing = await ref.get();
@@ -777,6 +778,7 @@ async function variantsFor(messageId, debunk, people, maxChars, claim, postUrl, 
         postUrl: postUrl || null,
         postText: postText || null,
         postSummary: postSummary || null,
+        sourceShort: sourceShort || null,
         createdAt: FieldValue.serverTimestamp()
       });
       console.log(`upstream wordings: ${male.length} usable -> ${plan.perPerson} each for ${plan.servable} recipients`);
@@ -831,6 +833,7 @@ async function variantsFor(messageId, debunk, people, maxChars, claim, postUrl, 
     // model was actually shown.
     postText: postText || null,
     postSummary: postSummary || null,
+    sourceShort: sourceShort || null,
     // Kept so a disputed wording can be traced to the fact and the page it
     // came from, rather than argued about from memory.
     groundedFindings: findings,
@@ -927,6 +930,12 @@ app.post('/api/broadcast-fake-hunting', async (req, res) => {
     const postSummary = await resolvePostSummary(
       providedSummary, cleanSnippet(postText), claim, rid);
 
+    // The debunk source link, shortened onto our own domain. The raw
+    // message_link often carries Hebrew percent-encoding and looks alarming
+    // pasted into a composer; the short form also counts clicks, which tells
+    // us whether anyone opens the sources at all.
+    const sourceShort = message_link ? await shorten(db, message_link, rid) : null;
+
     const debunk = (debunkPart || '').trim();
 
     // dry_run: the entire pipeline runs — selection, grounding, wording
@@ -964,7 +973,7 @@ app.post('/api/broadcast-fake-hunting', async (req, res) => {
     let servable = 0;
     if(debunk){
       try{
-        servable = await variantsFor(message_id, debunk, recipients.length, maxChars, claim, postUrl, postText, providedVariants, postSummary);
+        servable = await variantsFor(message_id, debunk, recipients.length, maxChars, claim, postUrl, postText, providedVariants, postSummary, sourceShort);
       }catch(e){
         console.error(rid, 'variant generation failed:', e.message);
       }

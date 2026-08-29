@@ -69,6 +69,21 @@
             "value": "no-cache, max-age=0"
           }
         ]
+      },
+      {
+        "source": "/r/**",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "no-cache, max-age=0"
+          }
+        ]
+      }
+    ],
+    "rewrites": [
+      {
+        "source": "/r/**",
+        "destination": "/r/index.html"
       }
     ]
   }

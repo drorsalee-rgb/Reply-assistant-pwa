@@ -248,6 +248,30 @@ app.post('/feedback', async (req, res) => {
   res.status(204).end();
 });
 
+// Click counting for our short links (/r/<code> on the hosting site). The
+// resolver page fires this as a beacon and never waits for the answer, so
+// this endpoint is allowed to fail without anyone noticing — the redirect
+// already happened. Counts, not identities: no IP, no user id stored.
+app.post('/rc', async (req, res) => {
+  res.set('Access-Control-Allow-Origin', '*');
+  try{
+    if(overLimit('rc', clientIp(req))) return res.status(429).json({ error: 'slow down' });
+    let body = {};
+    try{ body = JSON.parse(req.body || '{}'); }catch(e){}
+    const code = String(body.code || '');
+    // Hash-derived base64url; anything else is not one of ours.
+    if(!/^[A-Za-z0-9_-]{4,16}$/.test(code)) return res.status(400).json({ error: 'bad code' });
+
+    const ref = db.collection('short-links').doc(code);
+    // update() rather than set(): a click on a code that was never created
+    // must not conjure an empty document.
+    await ref.update({ clicks: FieldValue.increment(1), lastClickAt: FieldValue.serverTimestamp() });
+    res.json({ ok: true });
+  }catch(e){
+    res.status(404).json({ error: 'unknown code' });
+  }
+});
+
 app.get('/healthz', (req, res) => res.json({ ok: true }));
 
 const port = process.env.PORT || 8080;

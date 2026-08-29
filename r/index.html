@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="robots" content="noindex" />
+<title>יוריקי — מעביר…</title>
+<style>
+  body{
+    margin:0; height:100vh; display:flex; align-items:center; justify-content:center;
+    background:#0a1e25; color:#8aa097;
+    font-family:'Noto Sans Hebrew','Inter',sans-serif; font-size:16px;
+  }
+  a{ color:#28c2e0; }
+</style>
+</head>
+<body>
+<div id="msg">מעביר למקור…</div>
+
+<script>
+// Short-link resolver: /r/<code> → the stored URL.
+//
+// This runs as a static page rather than a server because Firebase Hosting
+// cannot rewrite to a Cloud Run service in another GCP project (hosting lives
+// in yoriki-500811, the services in torino-social). A page adds ~a quarter
+// second before the redirect; nobody notices, and there is nothing to deploy
+// beyond the same hosting everything else uses.
+//
+// The mapping is written by signal-broadcast into `short-links`, read here
+// via the public Firestore REST endpoint by direct document id — the same
+// access pattern as the rest of the PWA.
+
+const FIREBASE_API_KEY = 'AIzaSyCb27ww2YnTDCjzrQw96w39EvyVisPPY9E';
+const DOC_URL = 'https://firestore.googleapis.com/v1/projects/torino-social/databases/(default)/documents/short-links/';
+const CLICK_URL = 'https://pwa-events-ru4qjbbrxa-ew.a.run.app/rc';
+
+// The code is whatever follows /r/. Hash-derived base64url, so this charset
+// is exact — anything else is not one of ours.
+const code = (location.pathname.match(/\/r\/([A-Za-z0-9_-]{4,16})\/?$/) || [])[1];
+
+async function go(){
+  if(!code){
+    document.getElementById('msg').textContent = 'הקישור אינו תקין.';
+    return;
+  }
+  try{
+    const res = await fetch(DOC_URL + encodeURIComponent(code) + '?key=' + FIREBASE_API_KEY);
+    if(!res.ok) throw new Error('not found');
+    const doc = await res.json();
+    const url = doc.fields && doc.fields.url && doc.fields.url.stringValue;
+    if(!url || !/^https:\/\//i.test(url)) throw new Error('bad url');
+
+    // Count the click without delaying the redirect. sendBeacon survives the
+    // page being torn down mid-flight; the redirect never waits for it.
+    try{ navigator.sendBeacon(CLICK_URL, JSON.stringify({ code })); }catch(e){}
+
+    location.replace(url);
+  }catch(e){
+    document.getElementById('msg').textContent = 'הקישור לא נמצא או שפג תוקפו.';
+  }
+}
+go();
+</script>
+</body>
+</html>

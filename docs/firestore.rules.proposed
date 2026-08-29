@@ -45,6 +45,14 @@ service cloud.firestore {
       allow list, write: if false;
     }
 
+    // Short-link resolver — /r/<code> on the hosting site looks up the target
+    // by document id. Writes come only from backend services (clicks are
+    // counted via pwa-events, which uses the Admin SDK).
+    match /short-links/{code} {
+      allow get: if true;
+      allow list, write: if false;
+    }
+
     // ---- dashboard reads ----
     // Signed-in dashboard users only. This is where the sensitive data lives:
     // fake-hunt-optins holds volunteers' phone numbers and first names, and

@@ -494,7 +494,7 @@ const els = {
   reportSend: document.getElementById('reportSend')
 };
 
-const PAGE = { claim: '', postSummary: '', debunk: '', postUrl: null, sourceUrl: null, network: null };
+const PAGE = { claim: '', postSummary: '', debunk: '', postUrl: null, sourceUrl: null, sourceShort: null, network: null };
 
 // Each recipient's link carries a variant index, so the people drawn for one
 // alert don't all post the identical sentence.
@@ -630,7 +630,10 @@ async function loadVariants(){
         // document doesn't carry one.
         postUrl: fields.postUrl && fields.postUrl.stringValue,
         // One sentence describing the post, with its subject named.
-        postSummary: fields.postSummary && fields.postSummary.stringValue
+        postSummary: fields.postSummary && fields.postSummary.stringValue,
+        // The debunk source on our own short domain; counts clicks and spares
+        // the composer the percent-encoded Hebrew of the raw link.
+        sourceShort: fields.sourceShort && fields.sourceShort.stringValue
       };
     }
     // Alerts generated before gendered variants existed.
@@ -702,7 +705,11 @@ const X_URL_COST = 23;
 // check it. This — not the wording alone — is what gets copied and counted.
 function replyText(){
   if(!PAGE.debunk) return '';
-  return PAGE.sourceUrl ? PAGE.debunk + '\n' + PAGE.sourceUrl : PAGE.debunk;
+  // The short form of the source, when the alert carries one: it reads
+  // cleanly in a composer where the raw link shows as percent-encoded Hebrew,
+  // and clicks on it are counted. Old alerts fall back to the raw link.
+  const source = PAGE.sourceShort || PAGE.sourceUrl;
+  return source ? PAGE.debunk + '\n' + source : PAGE.debunk;
 }
 
 // Counting the raw string would overstate a long source URL and wrongly show
@@ -752,14 +759,14 @@ function watchQuoteScroll(){
 
 function renderSource(){
   const sep = document.getElementById('hintSep');
-  if(!PAGE.sourceUrl){
+  if(!PAGE.sourceUrl && !PAGE.sourceShort){
     els.source.hidden = true;
     if(sep) sep.hidden = true;
     return;
   }
   els.source.textContent = '';
   const a = document.createElement('a');
-  a.href = PAGE.sourceUrl;
+  a.href = PAGE.sourceShort || PAGE.sourceUrl;
   a.target = '_blank';
   a.rel = 'noopener';
   a.textContent = 'מקור ההפרכה';
@@ -1001,6 +1008,7 @@ async function init(){
   const loaded = await loadVariants();
   if(!PAGE.postUrl && loaded.postUrl) PAGE.postUrl = loaded.postUrl;
   PAGE.postSummary = loaded.postSummary || '';
+  PAGE.sourceShort = loaded.sourceShort || null;
   PAGE.network = networkFromUrl(PAGE.postUrl || '');
 
   const slot = Number.isInteger(variantIndex) && variantIndex >= 0 ? variantIndex : 0;

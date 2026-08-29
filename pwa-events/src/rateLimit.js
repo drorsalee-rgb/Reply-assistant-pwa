@@ -17,6 +17,9 @@ const LIMITS = {
   // Events fire on open, style choice, copy and decline, and a volunteer may
   // legitimately reopen a few links in a row.
   events: Number(process.env.RATE_LIMIT_EVENTS) || 120,
+  // Short-link click beacons: one per redirect, and nobody redirects sixty
+  // times a minute by hand.
+  rc: Number(process.env.RATE_LIMIT_RC) || 60,
 };
 
 const hits = new Map();
