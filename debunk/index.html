@@ -804,14 +804,22 @@ function openPost(){
       + '&text=' + encodeURIComponent(replyText());
     return;
   }
+  // iOS puts an "Open in X?" dialog between the tap and the app, and an older
+  // reader can easily sit on it for several seconds — during which this page
+  // stays visible. A short fallback would fire mid-dialog and drag them to the
+  // web login wall on top of the app. So: generous timeout, and any signal
+  // that the dialog or the app took focus (blur / hidden / pagehide) cancels.
   const fallback = setTimeout(() => {
-    // Still here after a second: the app did not take over. The plain post
-    // URL is the least-bad web landing; the reply is on the clipboard.
     if(document.visibilityState === 'visible'){
       window.location.href = PAGE.postUrl;
     }
-  }, 1200);
-  window.addEventListener('pagehide', () => clearTimeout(fallback), { once: true });
+  }, 3000);
+  const cancel = () => clearTimeout(fallback);
+  window.addEventListener('pagehide', cancel, { once: true });
+  window.addEventListener('blur', cancel, { once: true });
+  document.addEventListener('visibilitychange', () => {
+    if(document.visibilityState === 'hidden') cancel();
+  }, { once: true });
   window.location.href = 'twitter://status?id=' + id;
 }
 
