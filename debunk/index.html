@@ -770,24 +770,25 @@ function renderSource(){
 
 /* ---------- actions ---------- */
 
-// Where "open" should actually take the reader — it differs by device.
+// Where "open" should actually take the reader.
 //
-// DESKTOP: X's web intent (/intent/post?in_reply_to=<id>&text=…) opens the
-// reply composer with the reply prefilled. Verified on the Mac.
+// X posts use the /intent/tweet web intent, on every device. Unlike
+// /intent/post (login wall on phones — not claimed by the app) and
+// twitter:// custom schemes ("Open in X?" dialog every time), the legacy
+// intent/tweet URL IS claimed by the app's universal links: verified on an
+// iPhone on 2026-08-29, it opens the app's reply composer silently, and
+// falls back to the browser when the app is not installed.
 //
-// PHONES: the plain post URL. The X app claims it as a universal link and
-// opens ON the post, silently — the reader taps reply and pastes. Both
-// alternatives tried and rejected on a real iPhone (2026-08-29):
-//   - the intent URL is NOT claimed by the app, so it opened as a web page
-//     where the reader is not signed in — a login wall;
-//   - twitter://status?id=… lands on the post too, but iOS interposes an
-//     "Open in X?" dialog EVERY time (custom schemes are never remembered),
-//     which costs the same tap the intent was meant to save.
+// The reply text is prefilled, so the reader posts with one tap instead of
+// pasting. Known trade-off, accepted deliberately: the composer does not
+// show the post being answered. The PWA screen they just came from shows the
+// post's summary, and the clipboard still carries the reply as a safety net.
+//
+// Other networks have no such intent and keep the plain post URL.
 function openPost(){
-  const id = String(PAGE.postUrl || '').match(/(?:twitter\.com|x\.com)\/[A-Za-z0-9_]+\/status\/(\d+)/i);
-  const isPhone = /android|iphone|ipad|ipod/i.test(navigator.userAgent);
-  if(id && !isPhone){
-    window.location.href = 'https://x.com/intent/post?in_reply_to=' + id[1]
+  const m = String(PAGE.postUrl || '').match(/(?:twitter\.com|x\.com)\/[A-Za-z0-9_]+\/status\/(\d+)/i);
+  if(m){
+    window.location.href = 'https://x.com/intent/tweet?in_reply_to=' + m[1]
       + '&text=' + encodeURIComponent(replyText());
     return;
   }
