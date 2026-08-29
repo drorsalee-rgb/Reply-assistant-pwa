@@ -21,6 +21,7 @@ const { checkPostClaims } = require('./grounding');
 const { resolvePostSummary } = require('./postSummary');
 const notify = require('./notify');
 const { shorten } = require('./shortLinks');
+const { checkFreshness, MAX_POST_AGE_DAYS } = require('./freshness');
 const { DEFAULT_NETWORKS } = require('./preferences');
 
 const db = new Firestore();
@@ -909,6 +910,28 @@ app.post('/api/broadcast-fake-hunting', async (req, res) => {
     const providedVariants = body.debunk_variants
       || (alertDoc && alertDoc.exists ? alertDoc.data().debunk_variants : null)
       || null;
+
+    // Refuse alerts about posts that are already old. On 2026-08-29 the
+    // fake-finding server lost track of what it had delivered and replayed its
+    // archive: volunteers were asked to reply to posts 14-26 days old. We
+    // accepted all of them, because nothing here looked at the age.
+    //
+    // Refused rather than dropped: a 4xx tells the caller, and the counter is
+    // the earliest visible symptom of a partner re-sending history.
+    const freshness = checkFreshness(postUrl);
+    if(freshness.stale){
+      console.log(rid, `refusing stale alert: post is ${Math.round(freshness.ageDays)} days old`);
+      await sendAlert('stale-alerts',
+        `התקבלה התראה על פוסט בן ${Math.round(freshness.ageDays)} ימים ולא נשלחה. `
+        + `ייתכן שהשרת של אילן משדר מחדש היסטוריה — כדאי לבדוק.`,
+        rid, { title: 'התראה על פוסט ישן נחסמה', footer: '' });
+      return respond(422, {
+        error: `Post is ${Math.round(freshness.ageDays)} days old; the limit is ${MAX_POST_AGE_DAYS}`,
+        reason: 'stale_post',
+        age_days: Math.round(freshness.ageDays),
+        retryable: false
+      });
+    }
 
     // Only people who asked for this network are drawn — even if that means
     // fewer than N. Messaging someone about a network they don't use is the
