@@ -34,9 +34,16 @@
     background:
       radial-gradient(ellipse 80% 50% at 50% -10%, var(--bg-soft), transparent),
       var(--bg);
-    height:100vh;
-    height:100dvh;
-    overflow:hidden;
+    /* The layout used to be pinned to the viewport with overflow:hidden, and
+       anything that did not fit was CUT OFF rather than scrolled to — the red
+       report button sat below the fold on most phones, and inside WhatsApp's
+       in-app browser, whose toolbar eats height that 100dvh still counts, even
+       on a large iPhone. Fixed-height also forced the reply font down to stay
+       inside the card, which made it too small to read.
+       The page now flows: content decides its height and the document scrolls,
+       which every browser — in-app ones included — handles correctly. */
+    min-height:100vh;
+    min-height:100dvh;
     font-family:'Noto Sans Hebrew','Inter',sans-serif;
     color:var(--paper);
     display:flex;
@@ -46,7 +53,8 @@
   .screen{
     width:100%;
     max-width:420px;
-    height:100%;
+    min-height:100vh;
+    min-height:100dvh;
     padding:20px;
     display:flex;
     flex-direction:column;
@@ -57,8 +65,6 @@
        on a 780px one 67px below, unreachable with no scrollbar to hint at it.
        Everything must stay reachable on every screen, so the column scrolls
        rather than swallowing its own bottom. */
-    overflow-y:auto;
-    overscroll-behavior:contain;
   }
   button{
     font-family:'Noto Sans Hebrew','Inter',sans-serif;
@@ -118,17 +124,13 @@
     border:1px solid rgba(255,255,255,0.07);
     border-radius:14px;
     padding:14px 16px;
-    overflow-y:auto;
-    flex:1;
-    min-height:0;
+    flex:none;
   }
   .context .placeholder{ color:#7ea3aa; font-style:italic; }
   /* The summary is context; the reply below is the thing being used. Cap the
      summary so a long one cannot squeeze the reply into a few lines. */
-  .context{ max-height:26vh; }
-  @media (max-height: 700px){ .context{ max-height:22vh; } }
 
-  .card-wrap{ position:relative; display:flex; flex-direction:column; flex:1 1 auto; min-height:210px; }
+  .card-wrap{ position:relative; display:flex; flex-direction:column; flex:none; }
   .card{
     position:relative;
     background:var(--card-bg);
@@ -138,8 +140,6 @@
     overflow:hidden;
     display:flex;
     flex-direction:column;
-    flex:1;
-    min-height:0;
     box-shadow:0 18px 40px -12px rgba(0,0,0,0.55);
   }
   .card-header{
@@ -153,42 +153,17 @@
     color:#bfe6ee;
   }
   .quote-text{
+    /* No inner scrolling and no shrinking: the card grows to its text and the
+       page scrolls. Older volunteers need this readable more than the screen
+       needs to hold everything at once. */
     font-size:24px;
     line-height:1.6;
     font-weight:600;
     margin:0;
-    flex:1;
-    display:flex;
-    flex-direction:column;
-    overflow-y:auto;
     padding:22px 20px;
     color:#eaf6f8;
   }
-  .quote-text::before, .quote-text::after{ content:''; margin:auto; }
-  /* Set by fitQuoteText(); the stylesheet value above is the starting point. */
-  .quote-text{ font-size:var(--quote-size, 24px); }
 
-  /* Shown only when the text still does not fit at the smallest readable size.
-     Without it a reader has no way to tell there is more text below — which is
-     how "I can't scroll" gets reported for something that is merely hidden. */
-  .card-wrap .scroll-hint{
-    position:absolute;
-    left:0; right:0; bottom:0;
-    height:44px;
-    border-radius:0 0 18px 18px;
-    background:linear-gradient(to bottom, rgba(18,54,66,0), var(--card-bg) 78%);
-    display:flex;
-    align-items:flex-end;
-    justify-content:center;
-    padding-bottom:8px;
-    font-size:13px;
-    color:#8aa097;
-    pointer-events:none;
-    opacity:0;
-    transition:opacity .18s ease;
-  }
-  .card-wrap.can-scroll .scroll-hint{ opacity:1; }
-  .card-wrap.scrolled-to-end .scroll-hint{ opacity:0; }
   .quote-text.placeholder{ color:#7ea3aa; font-style:italic; font-size:17px; font-weight:500; }
 
   .actions{ display:flex; flex-direction:column; gap:10px; flex:none; }
@@ -346,7 +321,6 @@
     .btn-accept{ padding:13px 20px; }
     .btn-decline{ padding:9px 20px; }
     .context{ font-size:18px; }
-    .card-wrap{ min-height:190px; }
   }
 </style>
 </head>
@@ -374,7 +348,6 @@
       <div class="card-header">ההפרכה שלך</div>
       <p class="quote-text placeholder" id="quoteText">טוען…</p>
     </div>
-    <div class="scroll-hint" id="scrollHint" aria-hidden="true">גללו לקריאת ההמשך ↓</div>
     <p class="length-badge" id="lengthBadge" hidden></p>
   </div>
 
@@ -456,7 +429,6 @@ const messageId = safeDecode(
 const els = {
   context: document.getElementById('context'),
   summaryIcon: document.getElementById('summaryIcon'),
-  cardWrap: document.querySelector('.card-wrap'),
   socialIcon: document.getElementById('socialIcon'),
   card: document.getElementById('card'),
   quoteText: document.getElementById('quoteText'),
@@ -712,73 +684,12 @@ function renderDebunk(){
     els.quoteText.textContent = replyText();
     els.acceptBtn.disabled = false;
     renderLength();
-    fitQuoteText();
   } else {
     els.quoteText.classList.add('placeholder');
     els.quoteText.textContent = 'לא נמצאה הפרכה עבור הפוסט הזה.';
     els.acceptBtn.disabled = true;
-    fitQuoteText();
   }
 }
-
-/* ---------- fitting the reply to the card ---------- */
-
-// Replies are not capped at X's 280 characters — Facebook and Instagram replies
-// run much longer — so the text often does not fit the card. Shrinking the font
-// buys room, but only so far: a lot of our volunteers are older, and text they
-// cannot read is worse than text they have to scroll.
-//
-// So: step down from the comfortable size to a floor that stays readable, and
-// when even that overflows, keep scrolling and SAY SO. The hint matters — the
-// original bug report was "I can't scroll", and part of that was simply not
-// knowing there was more text.
-const QUOTE_MAX_PX = 24;
-const QUOTE_MIN_PX = 18;   // the floor: readable for older eyes, not a squint
-const QUOTE_STEP_PX = 1;
-
-function fitQuoteText(){
-  const el = els.quoteText;
-  const wrap = els.cardWrap;
-  if(!el || !wrap) return;
-
-  let size = QUOTE_MAX_PX;
-  el.style.setProperty('--quote-size', size + 'px');
-  // A placeholder is short and has its own size; leave it alone.
-  if(el.classList.contains('placeholder')){
-    wrap.classList.remove('can-scroll', 'scrolled-to-end');
-    return;
-  }
-
-  while(size > QUOTE_MIN_PX && el.scrollHeight > el.clientHeight){
-    size -= QUOTE_STEP_PX;
-    el.style.setProperty('--quote-size', size + 'px');
-  }
-
-  // A few stray pixels are not worth covering text with a gradient; only
-  // flag an overflow big enough that something is genuinely out of sight.
-  const overflows = el.scrollHeight > el.clientHeight + 8;
-  wrap.classList.toggle('can-scroll', overflows);
-  wrap.classList.remove('scrolled-to-end');
-}
-
-// Hide the hint once the reader reaches the bottom; leaving it up implies
-// there is still more to come.
-function watchQuoteScroll(){
-  const el = els.quoteText;
-  const wrap = els.cardWrap;
-  if(!el || !wrap) return;
-  el.addEventListener('scroll', () => {
-    const atEnd = el.scrollTop + el.clientHeight >= el.scrollHeight - 4;
-    wrap.classList.toggle('scrolled-to-end', atEnd);
-  }, { passive: true });
-}
-
-// The card changes height when the keyboard opens or the phone rotates.
-let fitTimer = null;
-window.addEventListener('resize', () => {
-  clearTimeout(fitTimer);
-  fitTimer = setTimeout(fitQuoteText, 120);
-});
 
 function renderSource(){
   if(!PAGE.sourceUrl){ els.source.hidden = true; return; }
@@ -1019,8 +930,6 @@ async function init(){
   renderDebunk();
   renderSource();
   renderNetworkIcons();
-  watchQuoteScroll();
-  fitQuoteText();
   track('open');
 }
 

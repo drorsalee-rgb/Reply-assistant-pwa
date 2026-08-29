@@ -10,25 +10,64 @@
       {
         "source": "/",
         "headers": [
-          { "key": "Cache-Control", "value": "no-cache, max-age=0" }
+          {
+            "key": "Cache-Control",
+            "value": "no-cache, max-age=0"
+          }
         ]
       },
       {
         "source": "/index.html",
         "headers": [
-          { "key": "Cache-Control", "value": "no-cache, max-age=0" }
+          {
+            "key": "Cache-Control",
+            "value": "no-cache, max-age=0"
+          }
         ]
       },
       {
         "source": "/manifest.json",
         "headers": [
-          { "key": "Cache-Control", "value": "no-cache, max-age=0" }
+          {
+            "key": "Cache-Control",
+            "value": "no-cache, max-age=0"
+          }
         ]
       },
       {
         "source": "/service-worker.js",
         "headers": [
-          { "key": "Cache-Control", "value": "no-cache, max-age=0" }
+          {
+            "key": "Cache-Control",
+            "value": "no-cache, max-age=0"
+          }
+        ]
+      },
+      {
+        "source": "/debunk",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "no-cache, max-age=0"
+          }
+        ]
+      },
+      {
+        "source": "/debunk/",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "no-cache, max-age=0"
+          }
+        ]
+      },
+      {
+        "source": "/debunk/index.html",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "no-cache, max-age=0"
+          }
         ]
       }
     ]
