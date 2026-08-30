@@ -593,23 +593,37 @@ app.post('/api/broadcast', async (req, res) => {
       const waTargets = (only === 'signal' ? [] : whatsappTargetsFor(channel))
         .filter(t => targetAccepts(t, socialMedia));
       let whatsappGroupIds = [];
+      let whatsappFailures = [];
       let whatsappError = null;
       if(waTargets.length && beacon.isConfigured()){
-        try{
-          // Groups dedicated to one network get a message without the
-          // network line, so they can't share a single send.
-          for(const target of waTargets){
+        // One try/catch PER TARGET. A single try around the loop meant the
+        // first failure aborted every group after it: adding one group the bot
+        // cannot post to would have silently cost the 140-member group its
+        // message, depending only on the order of the array.
+        for(const target of waTargets){
+          try{
+            // Groups dedicated to one network get a message without the
+            // network line, so they can't share a single send.
             await beacon.sendMessage({
               groupIds: [target.groupId],
               message: forWhatsApp(messageFor(target))
             });
             whatsappGroupIds.push(target.groupId);
+          }catch(e){
+            whatsappFailures.push({ groupId: target.groupId, error: e.message });
+            console.error(rid, `WhatsApp send failed for ${target.groupId}:`, e.message);
           }
-        }catch(e){
-          whatsappError = e.message;
-          console.error(rid, 'WhatsApp send failed:', e.message);
+        }
+        if(whatsappFailures.length){
+          whatsappError = whatsappFailures.map(f => `${f.groupId}: ${f.error}`).join('; ');
+          // One alert naming every group that failed, rather than one per
+          // group — and the cooldown key is the provider, so a permanently
+          // broken target cannot page anyone every broadcast.
           await sendAlert(`whatsapp:${channel.id}`,
-            `שליחת ההודעה לוואטסאפ נכשלה עבור הספק "${channel.id}": ${e.message}`, rid);
+            `שליחת ההודעה לוואטסאפ נכשלה עבור הספק "${channel.id}" ל-${whatsappFailures.length} מתוך ${waTargets.length} קבוצות:\n`
+            + whatsappFailures.map(f => `• ${f.groupId} — ${f.error}`).join('\n')
+            + (whatsappGroupIds.length ? `\n\n(${whatsappGroupIds.length} קבוצות כן קיבלו.)` : ''),
+            rid);
         }
       } else if(waTargets.length && !beacon.isConfigured()){
         console.log(rid, 'WhatsApp targets configured but Beacon credentials are missing');
@@ -622,7 +636,10 @@ app.post('/api/broadcast', async (req, res) => {
         whatsappGroupIds,
         skippedByFilter: targets.length - matching.length
       };
-      if(whatsappError) result.whatsappError = whatsappError;
+      if(whatsappError){
+        result.whatsappError = whatsappError;
+        result.whatsappFailures = whatsappFailures;
+      }
       if(!sentTo.length){
         console.log(rid, `no target accepts network "${socialMedia}" for provider ${channel.id}`);
       }
