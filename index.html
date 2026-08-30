@@ -1206,17 +1206,22 @@ els.acceptBtn.addEventListener('click', async () => {
   returnUnused(usedItem ? usedItem.id : null);
   cleanedUp = true;
 
-  // Hand off to the real post.
+  // Hand off to the real post — the POST ITSELF, on every network and every
+  // platform.
   //
-  // X posts go through the /intent/tweet web intent instead of the post URL:
-  // the X app claims it as a universal link (verified on an iPhone,
-  // 2026-08-29 — unlike /intent/post, which hit a login wall, and twitter://
-  // schemes, which trigger an "Open in X?" dialog every time), so it opens
-  // the app's reply composer directly, ON the right post and with the reply
-  // prefilled — the reader just taps Post. On desktop the same URL opens the
-  // web composer, and without the app it falls back to the browser. The
-  // clipboard copy above stays as the safety net. Same mechanism as the
-  // debunk PWA; keep the two in step. Other networks keep the plain URL.
+  // X's /intent/tweet composer was tried here for a day and reverted. It does
+  // open a prefilled reply and saves the paste, but after publishing X returns
+  // the reader to their FEED, not to the post. A volunteer reported the cost:
+  // they could no longer like and share the post they had just answered
+  // without hunting for it again.
+  //
+  // That trade is wrong for THIS app. Yoriki Light exists to amplify a good
+  // post, and the reply is only one of three things a volunteer does to it —
+  // losing the like and the share to save one paste is a net loss.
+  //
+  // The debunk PWA keeps the composer, and the difference is not an
+  // inconsistency: there the target is a FAKE post, where liking and sharing
+  // are the last things anyone should do. Opposite goals, opposite handoff.
   //
   // The short pause lets the tally bump register before the screen changes.
   // It is deliberately brief: iOS ties the app handoff to the user's tap, so
@@ -1224,15 +1229,7 @@ els.acceptBtn.addEventListener('click', async () => {
   // the navigation is blocked entirely, the fallback link below gives the
   // user a second, gesture-backed way to open the post.
   if(PAGE_CONTEXT.postUrl){
-    const m = String(PAGE_CONTEXT.postUrl).match(/(?:twitter\.com|x\.com)\/[A-Za-z0-9_]+\/status\/(\d+)/i);
-    // Android gets the plain URL: on Samsung and Pixel the X app rendered the
-    // intent as a bare draft — no thread context and no visible "Replying to",
-    // risking a standalone tweet. See the debunk PWA's openPost for the full
-    // per-platform story; keep the two in step.
-    const isAndroid = /android/i.test(navigator.userAgent);
-    const url = (m && !isAndroid)
-      ? 'https://x.com/intent/tweet?in_reply_to=' + m[1] + '&text=' + encodeURIComponent(currentText)
-      : PAGE_CONTEXT.postUrl;
+    const url = PAGE_CONTEXT.postUrl;
     setTimeout(() => { window.location.href = url; }, TALLY_PAUSE_MS);
     setTimeout(() => {
       if(document.visibilityState === 'visible'){
