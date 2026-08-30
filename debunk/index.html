@@ -796,7 +796,10 @@ function renderSource(){
 // ANDROID — the plain post URL. The X Android app IGNORES in_reply_to, and
 // four different ways of asking were tried on real hardware before settling:
 //
-//   https://x.com/intent/tweet   -> bare composer, no "Replying to"
+//   https://x.com/intent/tweet   -> bare composer, no "Replying to", and no
+//                                   way to scroll up to the post either
+//                                   (re-tested 2026-08-30 specifically to rule
+//                                   out "threads but hides the context")
 //   intent://post ... (scheme=twitter, package=com.twitter.android)
 //                                -> bare composer, no "Replying to"
 //   the same with "@author " prefixed to the text
@@ -816,6 +819,7 @@ function renderSource(){
 function openPost(){
   const m = String(PAGE.postUrl || '').match(/(?:twitter\.com|x\.com)\/[A-Za-z0-9_]+\/status\/(\d+)/i);
   const isAndroid = /android/i.test(navigator.userAgent);
+
   if(m && !isAndroid){
     window.location.href = 'https://x.com/intent/tweet?in_reply_to=' + m[1]
       + '&text=' + encodeURIComponent(replyText());
