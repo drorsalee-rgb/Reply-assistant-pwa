@@ -1,0 +1,46 @@
+rules_version = '2';
+
+// Rules for the SECOND Firestore database in torino-social: `default1`.
+//
+// This database was missed when the (default) database was locked down on
+// 2026-08-29 — it has its own release, and its old ruleset still allowed the
+// whole internet to read AND WRITE until 2027-09-04. Haran flagged the
+// exposure on 2026-08-30 and a probe confirmed the worst part of it: an
+// anonymous PATCH to prompt-constants succeeded.
+//
+// That is not a data-leak problem, it is a control problem. prompt-constants
+// holds the prompt that generates the reply suggestions sent to 140+
+// volunteers, so a stranger could have rewritten what the model is told to
+// say and had volunteers post the result under their own names.
+//
+// Same constraint as the other database: the dashboard reads and writes this
+// one with NO authentication (getAuth() is called on the yoriki-app instance
+// only), so a rule requiring request.auth would break the prompt editor.
+// Until takephone/yoriki-dash#3 ships, the best available is to narrow WHAT
+// can be touched rather than WHO can touch it.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // The prompt editor reads and writes exactly one document per collection:
+    // doc(db, 'prompt-constants', 'shared'). Pinning the id means a stranger
+    // can no longer create or overwrite arbitrary documents here, and `list`
+    // is denied outright — the editor never enumerates, so nothing needs it,
+    // and without it the collection cannot be browsed.
+    //
+    // Overwriting 'shared' itself is still possible without auth. That is the
+    // remaining hole and it closes with dashboard sign-in (Phase 2).
+    match /prompt-constants/shared         { allow get, write: if true; }
+    match /prompt-constants_staging/shared { allow get, write: if true; }
+
+    // No client reads this — the engine writes it through the Admin SDK, which
+    // bypasses rules. It was world-writable too.
+    match /reaction_dashboard_counts/{docId} {
+      allow read, write: if false;
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
