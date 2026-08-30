@@ -705,11 +705,17 @@ const X_URL_COST = 23;
 // check it. This — not the wording alone — is what gets copied and counted.
 function replyText(){
   if(!PAGE.debunk) return '';
-  // The short form of the source, when the alert carries one: it reads
-  // cleanly in a composer where the raw link shows as percent-encoded Hebrew,
-  // and clicks on it are counted. Old alerts fall back to the raw link.
-  const source = PAGE.sourceShort || PAGE.sourceUrl;
-  return source ? PAGE.debunk + '\n' + source : PAGE.debunk;
+  // ALWAYS the original source URL here, never our short link. This text is
+  // PUBLISHED: it goes out as a public reply under the volunteer's own name.
+  // The short domain is yoriki-500811.web.app, and "Yoriki" is not a public
+  // name — putting it in every debunk would advertise the operation and invite
+  // questions the volunteer cannot answer. The source's own domain
+  // (true.org.il, fakereporter.net) is the right thing to cite anyway.
+  //
+  // The short link still exists and is still counted — see renderSource(),
+  // which uses it for the "מקור ההפרכה" link inside this page, where only the
+  // volunteer sees it.
+  return PAGE.sourceUrl ? PAGE.debunk + '\n' + PAGE.sourceUrl : PAGE.debunk;
 }
 
 // Counting the raw string would overstate a long source URL and wrongly show
