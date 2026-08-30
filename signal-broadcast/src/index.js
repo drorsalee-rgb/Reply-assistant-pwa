@@ -22,6 +22,7 @@ const { resolvePostSummary } = require('./postSummary');
 const notify = require('./notify');
 const { shorten } = require('./shortLinks');
 const { checkFreshness, MAX_POST_AGE_DAYS } = require('./freshness');
+const { checkPrompts } = require('./promptWatch');
 const { DEFAULT_NETWORKS } = require('./preferences');
 
 const db = new Firestore();
@@ -1225,6 +1226,29 @@ app.post('/api/notify', async (req, res) => {
     }
   }
   res.json({ ok: results.every(r => r.ok), results });
+});
+
+// The prompt intro lives in the default1 database and is still writable
+// without authentication (the dashboard's editor has no token). Polled by
+// Cloud Scheduler: this cannot stop a change, but it makes one impossible to
+// miss and keeps the previous text for an instant rollback.
+const promptDbs = {};
+function promptDbFor(databaseId){
+  if(!promptDbs[databaseId]) promptDbs[databaseId] = new Firestore({ databaseId });
+  return promptDbs[databaseId];
+}
+
+app.get('/api/check-prompts', async (req, res) => {
+  const rid = requestId();
+  try{
+    const results = await checkPrompts(db, promptDbFor, sendAlert, rid);
+    const changed = results.filter(r => r.status === 'changed');
+    if(changed.length) console.log(rid, 'prompt change detected:', JSON.stringify(changed));
+    res.json({ ok: true, results });
+  }catch(e){
+    console.error(rid, 'prompt watch failed:', e.message);
+    res.status(500).json({ ok: false, error: e.message });
+  }
 });
 
 app.get('/healthz', (req, res) => res.json({ ok: true }));
