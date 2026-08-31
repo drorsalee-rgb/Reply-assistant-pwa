@@ -73,9 +73,12 @@ async function pushOutcome({ requestId, messageId, outcome, note = '' }) {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        // Bearer, not a custom header: the credential Ilan shared is typed
-        // "bearer" on his side, so anything else would be rejected.
-        ...(OUTCOME_SECRET ? { Authorization: `Bearer ${OUTCOME_SECRET}` } : {}),
+        // X-Yoriki-Secret, as Ilan's endpoint expects. The 1Password entry
+        // types the credential "bearer", which I read as an Authorization
+        // header — it is not: that field describes how the vault classifies
+        // the item, not how his server reads it. He stated the header
+        // explicitly, so that is what we send.
+        ...(OUTCOME_SECRET ? { 'X-Yoriki-Secret': OUTCOME_SECRET } : {}),
       },
       body,
       signal: controller.signal,
