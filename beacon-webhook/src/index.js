@@ -157,6 +157,11 @@ async function recordOptIn(phone, parsed, name){
     // An unrecognised message still counts as joining; no networks recorded
     // means "everything", which the confirmation explains.
     networks: parsed.networks,
+    // Only written when the message actually said something about it. A person
+    // narrowing their networks must not silently lose (or gain) borderline
+    // posts, so "not mentioned" leaves the stored value alone.
+    ...(parsed.borderline === null || parsed.borderline === undefined
+      ? {} : { borderline: parsed.borderline }),
     ...(isNew ? { joinedAt: FieldValue.serverTimestamp() } : {}),
     updatedAt: FieldValue.serverTimestamp()
   }, { merge: true });

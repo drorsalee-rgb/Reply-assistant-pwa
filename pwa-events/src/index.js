@@ -30,6 +30,11 @@ const REPORT_REASONS = {
   replies_disabled: 'הפוסט לא מאפשר תגובות',
   not_fake: 'זה לא באמת פייק',
   reply_mismatch: 'התגובה לא מתאימה לפוסט',
+  // Verdicts on a borderline post — one the fake-finding server was not
+  // confident about. Unlike the reasons above these are not complaints; they
+  // are the answer we asked for, and both directions are worth recording.
+  borderline_fits: 'פוסט גבולי — התגובה מתאימה',
+  borderline_does_not_fit: 'פוסט גבולי — התגובה לא מתאימה',
 };
 const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS ||
   'https://yoriki-500811.web.app,http://localhost:8765').split(',');
@@ -40,7 +45,11 @@ const EVENTS = {
   style_selected: 'styleSelected',
   copy_open: 'copyOpen',
   decline: 'declines',
-  exhausted: 'exhausted'
+  exhausted: 'exhausted',
+  // Borderline verdicts, counted separately so the dashboard can show how many
+  // of these posts a human actually judged.
+  borderline_fits: 'borderlineFits',
+  borderline_no_fit: 'borderlineNoFit'
 };
 
 // Events we also count per distinct visitor: the first time a given

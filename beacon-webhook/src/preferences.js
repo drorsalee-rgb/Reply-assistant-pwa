@@ -23,6 +23,13 @@ const ALL_WORDS = ['הכל', 'הכול', 'כולם', 'כל הרשתות', 'all',
 const STOP_WORDS = ['הסר', 'הסירו', 'הסירי', 'עצור', 'עצרו', 'הפסק', 'הפסיקו',
                     'ביטול', 'בטל', 'בטלו', 'stop', 'unsubscribe', 'remove'];
 
+// Borderline posts are the ones the fake-finding server is NOT confident
+// about. They go only to volunteers who asked for them, because the task is
+// different: judging whether the suggested reply actually fits the post,
+// rather than posting a ready rebuttal.
+const BORDERLINE_ON_WORDS  = ['גבולי', 'גבוליים', 'בדיקה', 'בדיקות', 'חוות דעת', 'לבדוק'];
+const BORDERLINE_OFF_WORDS = ['בלי גבולי', 'בלי בדיקות', 'בלי בדיקה', 'לא גבולי', 'לא בדיקות'];
+
 function tokens(text){
   return String(text || '').toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(Boolean);
 }
@@ -33,22 +40,32 @@ function parseMessage(text){
   const words = tokens(raw);
 
   if(STOP_WORDS.some(w => words.includes(w))){
-    return { action: 'stop', networks: [] };
+    return { action: 'stop', networks: [], borderline: null };
   }
+
+  // Checked before the ON words, so "בלי בדיקות" is not read as asking for
+  // them. Absent from the message means "leave it as it is", not "turn off" —
+  // someone changing only their networks must not silently lose this.
+  const borderline = BORDERLINE_OFF_WORDS.some(w => lower.includes(w)) ? false
+    : (BORDERLINE_ON_WORDS.some(w => lower.includes(w)) ? true : null);
 
   const found = ALL_NETWORKS.filter(network => {
     const { hebrew, latin } = NETWORK_KEYWORDS[network];
     return hebrew.some(k => lower.includes(k)) || latin.some(k => words.includes(k));
   });
-  if(found.length) return { action: 'set', networks: found };
+  if(found.length) return { action: 'set', networks: found, borderline };
 
   if(ALL_WORDS.some(w => lower.includes(w))){
-    return { action: 'set', networks: [...DEFAULT_NETWORKS] };
+    return { action: 'set', networks: [...DEFAULT_NETWORKS], borderline };
   }
+
+  // Only a borderline instruction, with no network named: a preference change,
+  // not a new registration scope.
+  if(borderline !== null) return { action: 'set', networks: [], borderline };
 
   // Someone just said hello, or wrote something we don't recognise. Joining
   // still counts — they simply get everything until they narrow it down.
-  return { action: 'unknown', networks: [] };
+  return { action: 'unknown', networks: [], borderline: null };
 }
 
 const NETWORK_HE = {
@@ -63,9 +80,22 @@ function networkNames(networks){
 
 const HOW_TO_CHANGE =
   'לשינוי, שלחו לי הודעה עם שמות הרשתות שמעניינות אתכם — למשל "פייסבוק ואינסטגרם".\n' +
-  'לקבלת הכול: "הכל". להפסקת ההודעות: "הסר".';
+  'לקבלת הכול: "הכל". להפסקת ההודעות: "הסר".\n' +
+  'לקבלת פוסטים גבוליים שדורשים חוות דעת: "בדיקות".';
 
-function confirmationMessage({ action, networks }, { isNew = false } = {}){
+function borderlineLine(borderline){
+  if(borderline === true){
+    return '\n\n🔍 תקבל/י גם **פוסטים גבוליים** — כאלה שהמערכת לא בטוחה לגביהם. ' +
+      'שם המשימה שונה: לבדוק אם התגובה המוצעת מתאימה לפוסט, ולומר לנו. ' +
+      'זה מה שמשפר את המערכת.';
+  }
+  if(borderline === false){
+    return '\n\nלא תקבל/י יותר פוסטים גבוליים.';
+  }
+  return '';
+}
+
+function confirmationMessage({ action, networks, borderline }, { isNew = false } = {}){
   if(action === 'stop'){
     return 'הוסרת מרשימת ההתראות ולא תקבל/י מאיתנו הודעות נוספות. ' +
            'אם תשנה/י את דעתך, שלח/י לי הודעה עם שמות הרשתות שמעניינות אותך.';
@@ -76,7 +106,7 @@ function confirmationMessage({ action, networks }, { isNew = false } = {}){
   const scope = coversDefault
     ? `תקבל/י התראות על **כל הרשתות**: ${networkNames(networks)}.`
     : `תקבל/י התראות על: **${networkNames(networks)}**.`;
-  return `${opening}\n\n${scope}\n\n${HOW_TO_CHANGE}`;
+  return `${opening}\n\n${scope}${borderlineLine(borderline)}\n\n${HOW_TO_CHANGE}`;
 }
 
 // Someone whose message we could not parse has not asked to join — they may be

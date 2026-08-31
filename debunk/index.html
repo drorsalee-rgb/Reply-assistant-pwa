@@ -139,6 +139,31 @@
   /* The summary is context; the reply below is the thing being used. Cap the
      summary so a long one cannot squeeze the reply into a few lines. */
 
+  /* Borderline posts only. The question comes BEFORE the reply so it reads as
+     something to decide, not as a formality after the fact. */
+  .verdict{
+    flex:none;
+    background:rgba(217,122,75,0.12);
+    border:1px solid rgba(217,122,75,0.45);
+    border-radius:14px;
+    padding:12px 14px;
+    display:flex; flex-direction:column; gap:9px;
+  }
+  .verdict[hidden]{ display:none; }
+  .verdict-q{ margin:0; font-size:15.5px; font-weight:700; color:#f0b48a; }
+  .verdict-row{ display:flex; gap:8px; }
+  .verdict-btn{
+    flex:1;
+    background:rgba(255,255,255,0.07);
+    border:1px solid rgba(255,255,255,0.16);
+    color:#eaf6f8; font-weight:600; font-size:15px;
+    padding:10px 14px; border-radius:12px;
+  }
+  .verdict-btn:active{ transform:scale(0.97); }
+  .verdict-btn.chosen{ background:var(--accent); border-color:var(--accent); color:var(--accent-ink); }
+  .verdict-btn:disabled{ opacity:0.5; pointer-events:none; }
+  .verdict-done{ margin:0; font-size:13.5px; color:#8aa097; }
+
   .card-wrap{ position:relative; display:flex; flex-direction:column; flex:none; }
   /* Without this a reader cannot tell there is more text below — half of the
      original "I can't scroll" report was simply not knowing. */
@@ -369,17 +394,26 @@
 
   <div class="banner">
     <span class="dot"></span>
-    <span>זוהה פוסט מטעה — הנה הפרכה מוכנה</span>
+    <span id="bannerText">זוהה פוסט מטעה — הנה הפרכה מוכנה</span>
   </div>
 
   <div class="context-wrap" id="contextWrap">
     <p class="section-label">
-      <span>הפוסט שאליו מגיבים</span>
+      <span id="contextLabel">הפוסט שאליו מגיבים</span>
       <span class="social-icon" id="summaryIcon" hidden></span>
     </p>
     <div class="context" id="context">
       <span class="placeholder">טוען פרטי הפוסט…</span>
     </div>
+  </div>
+
+  <div class="verdict" id="verdict" hidden>
+    <p class="verdict-q">האם התגובה שלמטה מתאימה לפוסט הזה?</p>
+    <div class="verdict-row">
+      <button class="verdict-btn" id="verdictYes">מתאימה ✓</button>
+      <button class="verdict-btn" id="verdictNo">לא מתאימה ✕</button>
+    </div>
+    <p class="verdict-done" id="verdictDone" hidden></p>
   </div>
 
   <div class="card-wrap">
@@ -471,6 +505,12 @@ const els = {
   context: document.getElementById('context'),
   summaryIcon: document.getElementById('summaryIcon'),
   cardWrap: document.querySelector('.card-wrap'),
+  bannerText: document.getElementById('bannerText'),
+  contextLabel: document.getElementById('contextLabel'),
+  verdict: document.getElementById('verdict'),
+  verdictYes: document.getElementById('verdictYes'),
+  verdictNo: document.getElementById('verdictNo'),
+  verdictDone: document.getElementById('verdictDone'),
   socialIcon: document.getElementById('socialIcon'),
   card: document.getElementById('card'),
   quoteText: document.getElementById('quoteText'),
@@ -494,7 +534,7 @@ const els = {
   reportSend: document.getElementById('reportSend')
 };
 
-const PAGE = { claim: '', postSummary: '', debunk: '', postUrl: null, sourceUrl: null, sourceShort: null, network: null };
+const PAGE = { claim: '', postSummary: '', postText: '', borderline: false, debunk: '', postUrl: null, sourceUrl: null, sourceShort: null, network: null };
 
 // Each recipient's link carries a variant index, so the people drawn for one
 // alert don't all post the identical sentence.
@@ -633,7 +673,12 @@ async function loadVariants(){
         postSummary: fields.postSummary && fields.postSummary.stringValue,
         // The debunk source on our own short domain; counts clicks and spares
         // the composer the percent-encoded Hebrew of the raw link.
-        sourceShort: fields.sourceShort && fields.sourceShort.stringValue
+        sourceShort: fields.sourceShort && fields.sourceShort.stringValue,
+        // The fake-finding server was not confident about this post. The page
+        // then shows the post's FULL text and asks whether the suggested reply
+        // fits it, instead of presenting a rebuttal as settled.
+        borderline: fields.borderline && fields.borderline.booleanValue === true,
+        postText: (fields.postText && fields.postText.stringValue) || ''
       };
     }
     // Alerts generated before gendered variants existed.
@@ -681,7 +726,13 @@ function renderContext(){
   // The summary describes the post itself and names its subject. The claim is
   // the fallback: it is written as an abstract proposition and often arrives
   // with no subject at all, which is what this replaced.
-  const text = PAGE.postSummary || PAGE.claim;
+  // A borderline post is the thing being judged, so the reader gets its FULL
+  // text rather than a summary of it — a summary is someone else's reading,
+  // and reading is exactly what we are asking them to do. Video and image
+  // posts still need the link; the text alone cannot show those.
+  const text = PAGE.borderline
+    ? (PAGE.postText || PAGE.postSummary || PAGE.claim)
+    : (PAGE.postSummary || PAGE.claim);
   els.context.textContent = '';
   const span = document.createElement('span');
   if(text){
@@ -738,6 +789,8 @@ function renderDebunk(){
     els.quoteText.classList.remove('placeholder');
     els.quoteText.textContent = replyText();
     els.acceptBtn.disabled = false;
+    // A "does not fit" verdict outlives a wording or gender change.
+    applyVerdictBlock();
     renderLength();
     refreshScrollHint();
   } else {
@@ -761,6 +814,79 @@ function refreshScrollHint(){
 function watchQuoteScroll(){
   if(els.quoteText) els.quoteText.addEventListener('scroll', refreshScrollHint, { passive: true });
   window.addEventListener('resize', refreshScrollHint);
+}
+
+/* ---------- borderline: does the reply fit the post? ---------- */
+
+function applyVerdictBlock(){
+  if(!blockedByVerdict) return;
+  els.acceptBtn.disabled = true;
+  els.acceptLabel.textContent = 'לא מתאים לפרסום';
+}
+
+// The fake-finding server was not confident about this post. What we need from
+// the reader is a judgement on whether the suggested reply actually fits it —
+// that is the question the system is unsure about, and the answer is what
+// improves it. Posting is still allowed afterwards, but it is no longer the
+// only thing the page asks for.
+function applyBorderline(){
+  if(!PAGE.borderline) return;
+  document.title = 'Yoriki — פוסט שדורש בדיקה';
+  if(els.bannerText) els.bannerText.textContent = 'פוסט שדורש בדיקה — לא בטוחים לגביו';
+  if(els.contextLabel) els.contextLabel.textContent = 'הפוסט המלא';
+  if(els.verdict) els.verdict.hidden = false;
+  // Only text arrives here. A video or image post cannot be judged from the
+  // page, so say so rather than letting a reader assume they saw everything.
+  if(els.hint && PAGE.postUrl){
+    els.hint.insertAdjacentHTML('afterbegin',
+      'אם זה פוסט של וידאו או תמונה — פתחו אותו כדי לראות. ');
+  }
+}
+
+let verdictSent = false;
+// renderDebunk() re-enables the publish button every time it runs, and it runs
+// on every wording change and gender switch. Without this flag, a reader who
+// said the reply does not fit could browse to the next wording and get the
+// publish button back.
+let blockedByVerdict = false;
+async function sendVerdict(fits){
+  if(verdictSent) return;
+  verdictSent = true;
+  const btn = fits ? els.verdictYes : els.verdictNo;
+  const other = fits ? els.verdictNo : els.verdictYes;
+  btn.classList.add('chosen');
+  other.disabled = true;
+  btn.disabled = true;
+  els.verdictDone.textContent = fits
+    ? 'תודה. אפשר לפרסם את התגובה.'
+    : 'תודה — לא נפרסם. המשוב עוזר לשפר את הזיהוי.';
+  els.verdictDone.hidden = false;
+
+  // Reuses the existing report channel, so borderline verdicts land in the
+  // same sheet the fact-checking team already reads.
+  try{
+    await fetch(FEEDBACK_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify({
+        message_id: messageId,
+        variant: variantIndex,
+        reasons: [fits ? 'borderline_fits' : 'borderline_does_not_fit'],
+        note: '',
+        gender: readGender()
+      })
+    });
+  }catch(e){ /* the verdict is not worth failing the page over */ }
+
+  track(fits ? 'borderline_fits' : 'borderline_no_fit');
+
+  // Judged not to fit: publishing it is the one thing that should not happen
+  // next, so the button goes away rather than staying one tap from a reply
+  // the reader just said was wrong.
+  if(!fits){
+    blockedByVerdict = true;
+    applyVerdictBlock();
+  }
 }
 
 function renderSource(){
@@ -874,6 +1000,7 @@ function applyGender(next){
     renderDebunk();
     els.acceptBtn.classList.remove('done');
     els.acceptLabel.textContent = 'העתק ופתח';
+    applyVerdictBlock();
   });
 });
 
@@ -890,6 +1017,7 @@ function showWording(step){
   renderVariantCounter();
   els.acceptBtn.classList.remove('done');
   els.acceptLabel.textContent = 'העתק ופתח';
+  applyVerdictBlock();
 }
 
 els.nextWording.addEventListener('click', () => showWording(1));
@@ -1005,6 +1133,9 @@ els.reportSend.addEventListener('click', async () => {
   }, 700);
 });
 
+els.verdictYes.addEventListener('click', () => sendVerdict(true));
+els.verdictNo.addEventListener('click', () => sendVerdict(false));
+
 els.declineBtn.addEventListener('click', () => {
   track('decline');
   els.quoteText.classList.add('placeholder');
@@ -1033,6 +1164,8 @@ async function init(){
   if(!PAGE.postUrl && loaded.postUrl) PAGE.postUrl = loaded.postUrl;
   PAGE.postSummary = loaded.postSummary || '';
   PAGE.sourceShort = loaded.sourceShort || null;
+  PAGE.borderline = loaded.borderline === true;
+  PAGE.postText = loaded.postText || '';
   PAGE.network = networkFromUrl(PAGE.postUrl || '');
 
   const slot = Number.isInteger(variantIndex) && variantIndex >= 0 ? variantIndex : 0;
@@ -1060,6 +1193,7 @@ async function init(){
   renderDebunk();
   renderSource();
   renderNetworkIcons();
+  applyBorderline();
   watchQuoteScroll();
   refreshScrollHint();
   track('open');

@@ -340,13 +340,18 @@ function digitsOf(value){
 // so those members are not drawn.
 //
 // `network` filters to people who asked for alerts on that network.
-async function fetchPool(network){
+async function fetchPool(network, { borderline = false } = {}){
   const pool = [];
 
   const wanted = normalizeNetwork(network);
   const optinsSnap = await db.collection(OPTINS).where('active', '==', true).get();
   for(const doc of optinsSnap.docs){
     const data = doc.data();
+    // A borderline post is one the fake-finding server is not sure about, and
+    // it asks the reader to judge rather than to publish. Only people who
+    // explicitly asked for that get one — absent means no, so nobody is
+    // enrolled into it by default.
+    if(borderline && data.borderline !== true) continue;
     // No preference recorded means the default set — someone who joined
     // without naming networks is not signed up for YouTube or LinkedIn.
     const prefs = Array.isArray(data.networks) && data.networks.length
@@ -390,8 +395,8 @@ function claimKeyOf(claim){
 // somebody else waits.
 const RECENT_LOAD_HOURS = 24;
 
-async function selectRecipients(cap, network, claimKey = null){
-  const pool = await fetchPool(network);
+async function selectRecipients(cap, network, claimKey = null, { borderline = false } = {}){
+  const pool = await fetchPool(network, { borderline });
   if(pool.length === 0) return [];
 
   const windowStart = new Date(Date.now() - SELECTION_WINDOW_DAYS * 24 * 3600 * 1000);
@@ -725,7 +730,7 @@ function planBlocks(total, people){
   return { perPerson, servable: Math.min(people, Math.floor(total / perPerson)) };
 }
 
-async function variantsFor(messageId, debunk, people, maxChars, claim, postUrl, postText, provided, postSummary, sourceShort){
+async function variantsFor(messageId, debunk, people, maxChars, claim, postUrl, postText, provided, postSummary, sourceShort, borderline){
   const wanted = people * WORDINGS_PER_PERSON;
   const ref = db.collection(DEBUNK_VARIANTS).doc(String(messageId).slice(0, 200));
   const existing = await ref.get();
@@ -798,6 +803,7 @@ async function variantsFor(messageId, debunk, people, maxChars, claim, postUrl, 
         postText: postText || null,
         postSummary: postSummary || null,
         sourceShort: sourceShort || null,
+        borderline: borderline === true,
         createdAt: FieldValue.serverTimestamp()
       });
       console.log(`upstream wordings: ${male.length} usable -> ${plan.perPerson} each for ${plan.servable} recipients`);
@@ -853,6 +859,7 @@ async function variantsFor(messageId, debunk, people, maxChars, claim, postUrl, 
     postText: postText || null,
     postSummary: postSummary || null,
     sourceShort: sourceShort || null,
+    borderline: borderline === true,
     // Kept so a disputed wording can be traced to the fact and the page it
     // came from, rather than argued about from memory.
     groundedFindings: findings,
@@ -920,6 +927,11 @@ app.post('/api/broadcast-fake-hunting', async (req, res) => {
     // A one-sentence description of the post, written by the fake-finding
     // server. Preferred over the one we generate: it is written against the
     // full post and the verified evidence, neither of which reaches us.
+    // Not confident this post is fake. Changes who is drawn, what the message
+    // says, and what the page asks the reader to do.
+    const borderline = body.borderline === true
+      || (alertDoc && alertDoc.exists ? alertDoc.data().borderline === true : false);
+
     const providedSummary = String(body.post_summary
       || (alertDoc && alertDoc.exists ? alertDoc.data().post_summary : '')
       || '').trim().slice(0, 300);
@@ -986,7 +998,7 @@ app.post('/api/broadcast-fake-hunting', async (req, res) => {
     // is safe to use casually.
     const dryRun = body.dry_run === true;
 
-    const recipients = await selectRecipients(FAKE_HUNT_N, network, claimKeyOf(claim));
+    const recipients = await selectRecipients(FAKE_HUNT_N, network, claimKeyOf(claim), { borderline });
     if(!recipients.length){
       return respond(409, {
         error: network
@@ -1014,7 +1026,7 @@ app.post('/api/broadcast-fake-hunting', async (req, res) => {
     let servable = 0;
     if(debunk){
       try{
-        servable = await variantsFor(message_id, debunk, recipients.length, maxChars, claim, postUrl, postText, providedVariants, postSummary, sourceShort);
+        servable = await variantsFor(message_id, debunk, recipients.length, maxChars, claim, postUrl, postText, providedVariants, postSummary, sourceShort, borderline);
       }catch(e){
         console.error(rid, 'variant generation failed:', e.message);
       }
@@ -1052,10 +1064,18 @@ app.post('/api/broadcast-fake-hunting', async (req, res) => {
     // The claim is the fallback here for the same reason it is in the PWA: it
     // is an abstract proposition and frequently has no subject, so on its own
     // it doesn't tell the reader what they are being asked to reply to.
-    const alertLine = truncate(postSummary || claim);
-    const messageFor = index =>
-      `🔍 זוהה פוסט מטעה שכדאי להפריך 👇\n\n${alertLine}\n\n`
-      + `לחצו כאן להפרכה מוכנה:\n${linkFor(index)}`;
+    // A borderline alert says what it is in its first line. Someone glancing at
+    // a notification should not start from "here is a fake to rebut" when the
+    // system is not sure it is one — and for these the full post text is what
+    // the reader has to judge, so it replaces the summary.
+    const alertLine = borderline
+      ? truncate(cleanSnippet(postText) || postSummary || claim, 400)
+      : truncate(postSummary || claim);
+    const messageFor = index => borderline
+      ? `🤔 *פוסט שדורש בדיקה* — לא בטוחים לגביו 👇\n\n${alertLine}\n\n`
+        + `נשמח שתבדקו אם התגובה המוצעת מתאימה לפוסט:\n${linkFor(index)}`
+      : `🔍 זוהה פוסט מטעה שכדאי להפריך 👇\n\n${alertLine}\n\n`
+        + `לחצו כאן להפרכה מוכנה:\n${linkFor(index)}`;
     if(dryRun){
       return respond(200, {
         ok: true, dry_run: true,
