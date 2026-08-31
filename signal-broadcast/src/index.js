@@ -870,6 +870,57 @@ async function variantsFor(messageId, debunk, people, maxChars, claim, postUrl, 
   return plan.servable;
 }
 
+// Everything needed to find the offending alert at source, in both the
+// operator's WhatsApp and the message to the fake-finding server. The first
+// version of these alerts said only what was wrong with the claim, which is
+// not enough to locate the post it came from.
+function alertDetails({ messageId, requestId, claim, debunk, postUrl, sourceUrl, network }){
+  return [
+    `request_id: ${requestId || '(אין)'}`,
+    `message_id: ${messageId}`,
+    postUrl ? `הפוסט: ${postUrl}` : null,
+    sourceUrl ? `מקור ההפרכה: ${sourceUrl}` : null,
+    network ? `רשת: ${network}` : null,
+    '',
+    `הטענה: ${truncate(claim, 200)}`,
+    `ההפרכה: ${truncate(debunk, 300)}`
+  ].filter(l => l !== null).join('\n');
+}
+
+// The same facts in English, for the fake-finding server's maintainer.
+function upstreamProblemMessage({ problem, messageId, requestId, claim, debunk, postUrl, sourceUrl, network }){
+  return [
+    'Yoriki refused an alert and did NOT send it to volunteers.',
+    '',
+    `Problem: ${problem}`,
+    '',
+    `request_id: ${requestId || '(none)'}`,
+    `message_id: ${messageId}`,
+    postUrl ? `post: ${postUrl}` : null,
+    sourceUrl ? `debunk source: ${sourceUrl}` : null,
+    network ? `network: ${network}` : null,
+    '',
+    `claim: ${truncate(claim, 300)}`,
+    `debunk: ${truncate(debunk, 500)}`,
+    '',
+    'The fix is in the debunk text on your side; nothing to change here.'
+  ].filter(l => l !== null).join('\n');
+}
+
+// Tells the maintainer directly, so a rejected alert does not sit in an
+// operator's WhatsApp waiting to be forwarded by hand. Best effort, and the
+// same cooldown key as the operator alert so a repeat cannot page him twice.
+async function notifyUpstream(key, text, rid){
+  const phones = (process.env.UPSTREAM_ALERT_PHONES || '').split(',').map(p => p.trim()).filter(Boolean);
+  if(!phones.length) return;
+  try{
+    await beacon.sendMessage({ phoneNumbers: phones, message: forWhatsApp(text) });
+    console.log(rid, `upstream notified about ${key}`);
+  }catch(e){
+    console.error(rid, 'upstream notify failed:', e.message);
+  }
+}
+
 app.post('/api/broadcast-fake-hunting', async (req, res) => {
   const rid = requestId();
   const body = req.body || {};
@@ -1032,18 +1083,35 @@ app.post('/api/broadcast-fake-hunting', async (req, res) => {
       }
     }
 
+    const rejection = { messageId: message_id, requestId: request_id, claim, debunk,
+                        postUrl, sourceUrl: message_link, network };
+
     if(servable === -2){
-      const problem = `ההפרכה של ההתראה "${truncate(claim, 80)}" ארוכה מדי לרשת `
-        + `${network || '(לא ידועה)'} (${debunk.length} תווים), ולא ניתן היה לקצר אותה. `
-        + `לא נשלחה — יש לקצר את טקסט ההפרכה במקור.`;
-      await sendAlert(`too-long:${message_id}`, problem, rid);
+      const problem = `ההפרכה ארוכה מדי לרשת ${network || '(לא ידועה)'} `
+        + `(${debunk.length} תווים), ולא ניתן היה לקצר אותה. `
+        + `ההתראה לא נשלחה — יש לקצר את טקסט ההפרכה במקור.`;
+      // No footer: the default one says the broadcast went out and the channel
+      // table needs fixing. Neither is true here — nothing was sent, and the
+      // fault is in the debunk text upstream.
+      await sendAlert(`too-long:${message_id}`,
+        `${problem}\n\n${alertDetails(rejection)}`, rid,
+        { title: 'התראה נדחתה — ההפרכה ארוכה מדי', footer: '' });
+      await notifyUpstream(`too-long:${message_id}`,
+        upstreamProblemMessage({ problem: `The debunk is too long for ${network || 'this network'} `
+          + `(${debunk.length} characters) and could not be shortened.`, ...rejection }), rid);
       return respond(409, { error: problem, reason: 'debunk_too_long' });
     }
 
     if(servable === -1){
-      const problem = `ההפרכה של ההתראה "${truncate(claim, 80)}" לא מציינת מי עשה את הפעולה, `
-        + `ואי אפשר לקבוע זאת מהטענה. לא נשלחה — יש להוסיף את השם לטקסט ההפרכה.`;
-      await sendAlert(`ambiguous:${message_id}`, problem, rid);
+      const problem = `ההפרכה לא מציינת מי עשה את הפעולה, ואי אפשר לקבוע זאת מהטענה. `
+        + `ההתראה לא נשלחה — יש להוסיף את השם לטקסט ההפרכה.`;
+      await sendAlert(`ambiguous:${message_id}`,
+        `${problem}\n\n${alertDetails(rejection)}`, rid,
+        { title: 'התראה נדחתה — חסר נושא בהפרכה', footer: '' });
+      await notifyUpstream(`ambiguous:${message_id}`,
+        upstreamProblemMessage({ problem: 'The debunk does not name who did the thing, and it '
+          + 'cannot be inferred from the claim. A volunteer reading it would not know who is '
+          + 'being corrected.', ...rejection }), rid);
       return respond(409, { error: problem, reason: 'ambiguous_debunk' });
     }
     const variantCount = servable;

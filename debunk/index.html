@@ -135,6 +135,16 @@
     overflow-y:auto;
     overscroll-behavior:contain;
   }
+  /* On a borderline post the text IS the task — the reader has to get through
+     it to judge whether the reply fits — so it gets roughly double the room,
+     taken from the reply card below, which is the thing being judged rather
+     than read. */
+  body.is-borderline .context{ max-height:38vh; }
+  body.is-borderline .quote-text{ max-height:22vh; }
+  @media (max-height: 700px){
+    body.is-borderline .context{ max-height:34vh; }
+    body.is-borderline .quote-text{ max-height:20vh; }
+  }
   .context .placeholder{ color:#7ea3aa; font-style:italic; }
   /* The summary is context; the reply below is the thing being used. Cap the
      summary so a long one cannot squeeze the reply into a few lines. */
@@ -838,6 +848,7 @@ function applyBorderline(){
   document.title = 'Yoriki — פוסט שדורש בדיקה';
   if(els.bannerText) els.bannerText.textContent = 'פוסט שדורש בדיקה — לא בטוחים לגביו';
   if(els.contextLabel) els.contextLabel.textContent = 'הפוסט המלא';
+  document.body.classList.add('is-borderline');
   if(els.verdict) els.verdict.hidden = false;
 
   // A video or image post cannot be judged from text alone. There are two ways
@@ -861,6 +872,8 @@ function applyBorderline(){
   }
 
   restoreVerdict();
+  // The boxes just changed height, so what overflows changed with them.
+  refreshScrollHint();
 }
 
 // Remembering the verdict is what makes "go and watch it, then come back"
