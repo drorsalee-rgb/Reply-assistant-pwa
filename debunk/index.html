@@ -173,6 +173,25 @@
   .verdict-btn.chosen{ background:var(--accent); border-color:var(--accent); color:var(--accent-ink); }
   .verdict-btn:disabled{ opacity:0.5; pointer-events:none; }
   .verdict-done{ margin:0; font-size:13.5px; color:#8aa097; }
+  .verdict-note-box{ display:flex; flex-direction:column; gap:7px; }
+  .verdict-note-box[hidden]{ display:none; }
+  .verdict-note-label{ font-size:13.5px; color:#d7c0ae; }
+  .verdict-textarea{
+    width:100%; resize:vertical; min-height:62px;
+    background:rgba(0,0,0,0.22); color:#eaf6f8;
+    border:1px solid rgba(255,255,255,0.16); border-radius:10px;
+    padding:9px 11px; font-size:15px; line-height:1.5;
+    font-family:'Noto Sans Hebrew','Inter',sans-serif;
+  }
+  .verdict-textarea::placeholder{ color:#7ea3aa; }
+  .verdict-send{
+    align-self:flex-start;
+    background:rgba(255,255,255,0.08); border:1px solid rgba(255,255,255,0.18);
+    color:#bfe6ee; font-weight:600; font-size:14.5px;
+    padding:8px 18px; border-radius:11px;
+  }
+  .verdict-send:active{ transform:scale(0.97); }
+  .verdict-send:disabled{ opacity:0.5; pointer-events:none; }
   .verdict-note{ margin:0; font-size:13.5px; color:#d7c0ae; line-height:1.5; }
   .verdict-why{
     margin:0; font-size:14px; color:#eaf6f8; line-height:1.5;
@@ -433,6 +452,12 @@
       <button class="verdict-btn" id="verdictNo">לא מתאימה ✕</button>
     </div>
     <p class="verdict-done" id="verdictDone" hidden></p>
+    <div class="verdict-note-box" id="verdictNoteBox" hidden>
+      <label class="verdict-note-label" for="verdictWhyNot">מה לא מתאים? (לא חובה, אבל מאוד עוזר)</label>
+      <textarea id="verdictWhyNot" class="verdict-textarea" rows="3"
+                placeholder="למשל: התגובה מתייחסת לטענה אחרת, או שהפוסט בכלל לא טוען את זה"></textarea>
+      <button class="verdict-send" id="verdictNoteSend">שלח פירוט</button>
+    </div>
   </div>
 
   <div class="card-wrap">
@@ -532,6 +557,9 @@ const els = {
   verdictDone: document.getElementById('verdictDone'),
   verdictNote: document.getElementById('verdictNote'),
   verdictWhy: document.getElementById('verdictWhy'),
+  verdictNoteBox: document.getElementById('verdictNoteBox'),
+  verdictWhyNot: document.getElementById('verdictWhyNot'),
+  verdictNoteSend: document.getElementById('verdictNoteSend'),
   socialIcon: document.getElementById('socialIcon'),
   card: document.getElementById('card'),
   quoteText: document.getElementById('quoteText'),
@@ -960,6 +988,11 @@ function applyVerdictUi(fits, { restored = false } = {}){
   if(!fits){
     blockedByVerdict = true;
     applyVerdictBlock();
+    // "Does not fit" is the answer worth explaining — WHY it does not fit is
+    // what the fake-finding server can learn from; the verdict alone only says
+    // something is wrong. Offered, never required: the verdict is already
+    // recorded, so a volunteer who ignores this box costs us nothing.
+    if(els.verdictNoteBox && !restored) els.verdictNoteBox.hidden = false;
   }
 }
 
@@ -986,6 +1019,31 @@ async function sendVerdict(fits){
   }catch(e){ /* the verdict is not worth failing the page over */ }
 
   track(fits ? 'borderline_fits' : 'borderline_no_fit');
+}
+
+// Sent as a second push carrying the same verdict plus the note. The verdict
+// itself went out the moment it was given, so nothing depends on this arriving
+// — and closing the page mid-sentence cannot lose the answer.
+async function sendVerdictNote(){
+  const note = (els.verdictWhyNot.value || '').trim();
+  if(!note) return;
+  els.verdictNoteSend.disabled = true;
+  els.verdictWhyNot.disabled = true;
+  try{
+    await fetch(FEEDBACK_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify({
+        message_id: messageId,
+        variant: variantIndex,
+        reasons: ['borderline_does_not_fit'],
+        note,
+        gender: readGender()
+      })
+    });
+  }catch(e){ /* the verdict already went; the detail is a bonus */ }
+  els.verdictNoteBox.hidden = true;
+  els.verdictDone.textContent = 'תודה — הפירוט נשלח.';
 }
 
 function renderSource(){
@@ -1232,6 +1290,7 @@ els.reportSend.addEventListener('click', async () => {
   }, 700);
 });
 
+els.verdictNoteSend.addEventListener('click', sendVerdictNote);
 els.verdictYes.addEventListener('click', () => sendVerdict(true));
 els.verdictNo.addEventListener('click', () => sendVerdict(false));
 
