@@ -930,11 +930,14 @@ async function notifyUpstream(key, text, rid){
 // for what we do not, rather than putting a machine token in front of a
 // volunteer. The PWA carries the same map.
 const BORDERLINE_REASONS_HE = {
-  human_review: 'המערכת סימנה את הפוסט לבדיקה אנושית ולא הכריעה לגביו.',
-  low_confidence: 'ההתאמה בין הפוסט לטענה המוכרת חלשה מהרגיל.',
-  partial_match: 'הפוסט מתאים לטענה רק בחלקו.',
-  ambiguous_claim: 'לא ברור לאיזו טענה בדיוק הפוסט מתייחס.',
-  media_only: 'הפוסט הוא בעיקר וידאו או תמונה.'
+  // The five codes Ilan's engine emits, per his table of 2026-08-31. Four are
+  // produced automatically by the matching pipeline; human_review is manual.
+  // Anything outside this list is shown as nothing rather than as a raw token.
+  low_confidence: 'ההתאמה בין הפוסט לטענה המוכרת יצאה חלשה מהרגיל.',
+  not_grounded: 'הציטוט או הטענה שעליהם מבוססת התגובה לא נמצאו בבירור בפוסט עצמו.',
+  model_flagged: 'המערכת שזיהתה את ההתאמה סימנה אותה בעצמה כדורשת בדיקה.',
+  dual_pass_disagreement: 'שתי בדיקות אימות נפרדות הגיעו למסקנות שונות.',
+  human_review: 'בודק אנושי ראה את ההתאמה והעביר אליכם את ההכרעה במכוון.'
 };
 
 function borderlineReasonText(raw){
