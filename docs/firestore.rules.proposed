@@ -106,6 +106,24 @@ service cloud.firestore {
       }
     }
 
+    // The same recipients documents again, and this rule is NOT redundant.
+    //
+    // The dashboard's fake-hunting page reads opens with a COLLECTION GROUP
+    // query (collectionGroup(db, 'recipients')), and a collection group query
+    // is only ever authorised by a rule whose path begins with a recursive
+    // wildcard — the nested match above does not apply to it, however exactly
+    // it covers the same documents by direct path. The old test-mode
+    // `{document=**}` rule happened to satisfy that; the lockdown removed it,
+    // and the page has shown "Missing or insufficient permissions" since.
+    //
+    // These documents hold counters only (opens, copyOpen, lastEventAt) — no
+    // phone number, no name — so exposing them to a group query gives away
+    // nothing the direct-path rule above was not already giving away.
+    match /{path=**}/recipients/{recipientId} {
+      allow read: if true;
+      allow write: if false;
+    }
+
     // ---- everything else: server-only ----
     // beacon-chatty, beacon-webhook-events, brief-messages, broadcast-alerts,
     // broadcast-config, channel-brief-*, creator_channels, debunk-feedback,
