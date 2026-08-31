@@ -163,6 +163,8 @@
   .verdict-btn.chosen{ background:var(--accent); border-color:var(--accent); color:var(--accent-ink); }
   .verdict-btn:disabled{ opacity:0.5; pointer-events:none; }
   .verdict-done{ margin:0; font-size:13.5px; color:#8aa097; }
+  .verdict-note{ margin:0; font-size:13.5px; color:#d7c0ae; line-height:1.5; }
+  .verdict-note a{ color:var(--gold); text-decoration:underline; font-weight:700; }
 
   .card-wrap{ position:relative; display:flex; flex-direction:column; flex:none; }
   /* Without this a reader cannot tell there is more text below — half of the
@@ -409,6 +411,7 @@
 
   <div class="verdict" id="verdict" hidden>
     <p class="verdict-q">האם התגובה שלמטה מתאימה לפוסט הזה?</p>
+    <p class="verdict-note" id="verdictNote" hidden></p>
     <div class="verdict-row">
       <button class="verdict-btn" id="verdictYes">מתאימה ✓</button>
       <button class="verdict-btn" id="verdictNo">לא מתאימה ✕</button>
@@ -511,6 +514,7 @@ const els = {
   verdictYes: document.getElementById('verdictYes'),
   verdictNo: document.getElementById('verdictNo'),
   verdictDone: document.getElementById('verdictDone'),
+  verdictNote: document.getElementById('verdictNote'),
   socialIcon: document.getElementById('socialIcon'),
   card: document.getElementById('card'),
   quoteText: document.getElementById('quoteText'),
@@ -835,11 +839,43 @@ function applyBorderline(){
   if(els.bannerText) els.bannerText.textContent = 'פוסט שדורש בדיקה — לא בטוחים לגביו';
   if(els.contextLabel) els.contextLabel.textContent = 'הפוסט המלא';
   if(els.verdict) els.verdict.hidden = false;
-  // Only text arrives here. A video or image post cannot be judged from the
-  // page, so say so rather than letting a reader assume they saw everything.
-  if(els.hint && PAGE.postUrl){
-    els.hint.insertAdjacentHTML('afterbegin',
-      'אם זה פוסט של וידאו או תמונה — פתחו אותו כדי לראות. ');
+
+  // A video or image post cannot be judged from text alone. There are two ways
+  // through it and the reader should know both: the text above may already be
+  // the transcript, or they can watch the post and come back. Coming back means
+  // reopening this link from WhatsApp, which reloads the page — so the verdict
+  // is remembered locally and restored, or the round trip would cost them the
+  // answer they already gave.
+  if(els.verdictNote && PAGE.postUrl){
+    els.verdictNote.textContent = '';
+    els.verdictNote.append('אם זה וידאו או תמונה: אפשר לשפוט לפי הטקסט שלמעלה, או ');
+    const a = document.createElement('a');
+    a.href = PAGE.postUrl;
+    a.target = '_blank';
+    a.rel = 'noopener';
+    a.textContent = 'לצפות בפוסט';
+    a.addEventListener('click', () => track('borderline_view_post'));
+    els.verdictNote.append(a);
+    els.verdictNote.append(' ולחזור לכאן. התשובה שלכם נשמרת.');
+    els.verdictNote.hidden = false;
+  }
+
+  restoreVerdict();
+}
+
+// Remembering the verdict is what makes "go and watch it, then come back"
+// survivable: returning from the post means reopening the link from WhatsApp,
+// which is a fresh page load. Per message and per wording slot, so one
+// person's stored answer cannot leak into a different alert.
+function verdictKey(){
+  return 'verdict:' + messageId + ':' + variantIndex;
+}
+
+function restoreVerdict(){
+  let saved = null;
+  try{ saved = localStorage.getItem(verdictKey()); }catch(e){ /* private mode */ }
+  if(saved === 'fits' || saved === 'no_fit'){
+    applyVerdictUi(saved === 'fits', { restored: true });
   }
 }
 
@@ -849,18 +885,30 @@ let verdictSent = false;
 // said the reply does not fit could browse to the next wording and get the
 // publish button back.
 let blockedByVerdict = false;
-async function sendVerdict(fits){
-  if(verdictSent) return;
+// Splitting the UI from the send lets a restored verdict reuse exactly the
+// same end state, instead of a second implementation that can drift from it.
+function applyVerdictUi(fits, { restored = false } = {}){
   verdictSent = true;
   const btn = fits ? els.verdictYes : els.verdictNo;
   const other = fits ? els.verdictNo : els.verdictYes;
   btn.classList.add('chosen');
-  other.disabled = true;
   btn.disabled = true;
+  other.disabled = true;
   els.verdictDone.textContent = fits
-    ? 'תודה. אפשר לפרסם את התגובה.'
-    : 'תודה — לא נפרסם. המשוב עוזר לשפר את הזיהוי.';
+    ? (restored ? 'ענית: מתאימה. אפשר לפרסם.' : 'תודה. אפשר לפרסם את התגובה.')
+    : (restored ? 'ענית: לא מתאימה.' : 'תודה — לא נפרסם. המשוב עוזר לשפר את הזיהוי.');
   els.verdictDone.hidden = false;
+  if(!fits){
+    blockedByVerdict = true;
+    applyVerdictBlock();
+  }
+}
+
+async function sendVerdict(fits){
+  if(verdictSent) return;
+  applyVerdictUi(fits);
+
+  try{ localStorage.setItem(verdictKey(), fits ? 'fits' : 'no_fit'); }catch(e){ /* private mode */ }
 
   // Reuses the existing report channel, so borderline verdicts land in the
   // same sheet the fact-checking team already reads.
@@ -879,14 +927,6 @@ async function sendVerdict(fits){
   }catch(e){ /* the verdict is not worth failing the page over */ }
 
   track(fits ? 'borderline_fits' : 'borderline_no_fit');
-
-  // Judged not to fit: publishing it is the one thing that should not happen
-  // next, so the button goes away rather than staying one tap from a reply
-  // the reader just said was wrong.
-  if(!fits){
-    blockedByVerdict = true;
-    applyVerdictBlock();
-  }
 }
 
 function renderSource(){
