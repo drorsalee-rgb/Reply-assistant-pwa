@@ -12,6 +12,7 @@ const express = require('express');
 const { Firestore, FieldValue } = require('@google-cloud/firestore');
 const { appendReport } = require('./sheet');
 const { clientIp, overLimit } = require('./rateLimit');
+const { pushOutcome, isConfigured: outcomesConfigured } = require('./outcomes');
 
 const db = new Firestore();
 const app = express();
@@ -121,6 +122,18 @@ async function record(req){
   }
 
   await statsRef.set(update, { merge: true });
+
+  // Publishing or declining is an outcome the fake-finding server can learn
+  // from too, but only for debunk alerts — the main PWA's ids are post
+  // documents, not alerts, and have no request_id to key on there.
+  if(outcomesConfigured() && documentId.startsWith('debunk:')
+     && (body.event === 'copy_open' || body.event === 'decline')){
+    const messageId = documentId.slice('debunk:'.length);
+    const context = await alertContext(messageId);
+    if(context.requestId){
+      await pushOutcome({ requestId: context.requestId, messageId, outcome: body.event });
+    }
+  }
 }
 
 app.post('/e', async (req, res) => {
@@ -165,7 +178,8 @@ async function alertContext(messageId){
     const data = doc.data();
     const text = String(data.text || '').replace(/https?:\/\/\S+/g, '');
     const claim = text.split(/\n\s*Debunk\s*:/i)[0].replace(/^\s*\[.*?\]\s*/, '').trim();
-    return { claim, postUrl: data.post_url || '', sourceUrl: data.message_link || '' };
+    return { claim, postUrl: data.post_url || '', sourceUrl: data.message_link || '',
+             requestId: data.request_id || '' };
   }catch(e){
     console.error('alert lookup failed:', e.message);
     return {};
@@ -225,6 +239,17 @@ app.post('/feedback', async (req, res) => {
       sourceUrl: context.sourceUrl || '',
       at: FieldValue.serverTimestamp(),
     });
+
+    // Tell the fake-finding server what a human concluded, so it can mark its
+    // own row true/false positive. Keyed by ITS request_id — our messageId is
+    // meaningless there. Outcomes only: no phone, no name, no slot.
+    if(outcomesConfigured() && context.requestId){
+      for(const reason of reasons){
+        await pushOutcome({
+          requestId: context.requestId, messageId, outcome: reason, note,
+        });
+      }
+    }
 
     if(SHEET_ID){
       // Firestore already has the report, so a sheet failure must not fail the

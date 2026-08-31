@@ -5,7 +5,8 @@
   "description": "Aggregate, privacy-preserving usage counters for the Yoriki Light PWA",
   "main": "src/index.js",
   "scripts": {
-    "start": "node src/index.js"
+    "start": "node src/index.js",
+    "test": "node --test test/*.test.mjs"
   },
   "engines": {
     "node": ">=20"
