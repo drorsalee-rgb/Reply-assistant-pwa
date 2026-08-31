@@ -39,7 +39,7 @@ test('does nothing until an endpoint is configured', async () => {
   }), 'skipped');
 });
 
-test('sends the partner id, the mapped outcome, and the shared secret', async () => {
+test('sends the partner id, the mapped outcome, and a Bearer credential', async () => {
   const { server, received, port } = await withServer((req, res) => { res.writeHead(200); res.end('{}'); });
   const m = await loadWith({
     FAKENEWS_OUTCOME_URL: `http://127.0.0.1:${port}/outcome`,
@@ -52,7 +52,7 @@ test('sends the partner id, the mapped outcome, and the shared secret', async ()
   assert.equal(r, 'sent');
   assert.equal(received[0].body.request_id, 'mk_43e85f264dacb6fd');
   assert.equal(received[0].body.outcome, 'reply_does_not_fit');
-  assert.equal(received[0].headers['x-yoriki-secret'], 's3cret');
+  assert.equal(received[0].headers.authorization, 'Bearer s3cret');
 });
 
 test('never carries who the volunteer was', async () => {

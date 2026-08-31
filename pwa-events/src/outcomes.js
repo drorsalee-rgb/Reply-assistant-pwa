@@ -73,7 +73,9 @@ async function pushOutcome({ requestId, messageId, outcome, note = '' }) {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        ...(OUTCOME_SECRET ? { 'X-Yoriki-Secret': OUTCOME_SECRET } : {}),
+        // Bearer, not a custom header: the credential Ilan shared is typed
+        // "bearer" on his side, so anything else would be rejected.
+        ...(OUTCOME_SECRET ? { Authorization: `Bearer ${OUTCOME_SECRET}` } : {}),
       },
       body,
       signal: controller.signal,
