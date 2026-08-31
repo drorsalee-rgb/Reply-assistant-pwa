@@ -925,6 +925,26 @@ async function notifyUpstream(key, text, rid){
   }
 }
 
+// The fake-finding server sends borderline_reason as a code, not prose (the
+// first real one was "human_review"). Translate what we know and say nothing
+// for what we do not, rather than putting a machine token in front of a
+// volunteer. The PWA carries the same map.
+const BORDERLINE_REASONS_HE = {
+  human_review: 'המערכת סימנה את הפוסט לבדיקה אנושית ולא הכריעה לגביו.',
+  low_confidence: 'ההתאמה בין הפוסט לטענה המוכרת חלשה מהרגיל.',
+  partial_match: 'הפוסט מתאים לטענה רק בחלקו.',
+  ambiguous_claim: 'לא ברור לאיזו טענה בדיוק הפוסט מתייחס.',
+  media_only: 'הפוסט הוא בעיקר וידאו או תמונה.'
+};
+
+function borderlineReasonText(raw){
+  const value = String(raw || '').trim();
+  if(!value) return '';
+  if(BORDERLINE_REASONS_HE[value]) return BORDERLINE_REASONS_HE[value];
+  if(/^[a-z0-9_.-]+$/.test(value)) return '';
+  return value;
+}
+
 app.post('/api/broadcast-fake-hunting', async (req, res) => {
   const rid = requestId();
   const body = req.body || {};
@@ -1151,8 +1171,8 @@ app.post('/api/broadcast-fake-hunting', async (req, res) => {
     const alertLine = borderline
       ? truncate(cleanSnippet(postText) || postSummary || claim, 400)
       : truncate(postSummary || claim);
-    const reasonLine = borderline && borderlineReason
-      ? `\n\n*למה לא בטוחים:* ${truncate(borderlineReason, 200)}` : '';
+    const reasonHe = borderline ? borderlineReasonText(borderlineReason) : '';
+    const reasonLine = reasonHe ? `\n\n*למה לא בטוחים:* ${truncate(reasonHe, 200)}` : '';
     const messageFor = index => borderline
       ? `🤔 *פוסט שדורש בדיקה* — לא בטוחים לגביו 👇\n\n${alertLine}${reasonLine}\n\n`
         + `נשמח שתבדקו אם התגובה המוצעת מתאימה לפוסט:\n${linkFor(index)}`

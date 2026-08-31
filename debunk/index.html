@@ -841,6 +841,29 @@ function watchQuoteScroll(){
 }
 
 /* ---------- borderline: does the reply fit the post? ---------- */
+// The server sends borderline_reason as a code, not prose — the first real one
+// was "human_review". Showing that verbatim reads as a bug and tells a
+// volunteer nothing, so known codes are translated and unknown ones are
+// hidden rather than displayed raw. Anything that looks like a sentence is
+// shown as written, so prose keeps working if the server starts sending it.
+const BORDERLINE_REASONS = {
+  human_review: 'המערכת סימנה את הפוסט לבדיקה אנושית — היא לא הכריעה לגביו בעצמה.',
+  low_confidence: 'ההתאמה בין הפוסט לטענה המוכרת חלשה מהרגיל.',
+  partial_match: 'הפוסט מתאים לטענה רק בחלקו.',
+  ambiguous_claim: 'לא ברור לאיזו טענה בדיוק הפוסט מתייחס.',
+  media_only: 'הפוסט הוא בעיקר וידאו או תמונה, ולכן קשה להכריע מהטקסט.'
+};
+
+function borderlineReasonText(raw){
+  const value = String(raw || '').trim();
+  if(!value) return '';
+  if(BORDERLINE_REASONS[value]) return BORDERLINE_REASONS[value];
+  // A bare lowercase token we do not recognise is a code we have not mapped
+  // yet; showing it would be worse than showing nothing.
+  if(/^[a-z0-9_.-]+$/.test(value)) return '';
+  return value;
+}
+
 
 function applyVerdictBlock(){
   if(!blockedByVerdict) return;
@@ -863,8 +886,9 @@ function applyBorderline(){
 
   // "We are not sure" is far less useful than knowing WHAT is uncertain, and
   // the server now tells us.
-  if(els.verdictWhy && PAGE.borderlineReason){
-    els.verdictWhy.textContent = 'למה לא בטוחים: ' + PAGE.borderlineReason;
+  const why = borderlineReasonText(PAGE.borderlineReason);
+  if(els.verdictWhy && why){
+    els.verdictWhy.textContent = 'למה לא בטוחים: ' + why;
     els.verdictWhy.hidden = false;
   }
 
