@@ -87,6 +87,10 @@ async function pushOutcome({ requestId, messageId, outcome, note = '' }) {
       console.warn(`outcome push rejected (${res.status}) for ${messageId}/${outcome}`);
       return 'failed';
     }
+    // Logged on success too, not just on failure: when this was first switched
+    // on there was no way to tell from the logs whether a push had gone
+    // through, only that it had not obviously broken.
+    console.log(`outcome pushed: ${OUTCOMES[outcome]} for ${requestId} (${messageId})`);
     return 'sent';
   } catch (e) {
     console.warn(`outcome push failed for ${messageId}/${outcome}: ${e.message}`);

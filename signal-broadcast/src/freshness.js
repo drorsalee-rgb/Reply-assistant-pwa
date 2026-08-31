@@ -37,6 +37,14 @@ function postAgeDays(postUrl, now = Date.now()) {
 // target is the archive-replay case, which runs to weeks.
 const MAX_POST_AGE_DAYS = Number(process.env.MAX_POST_AGE_DAYS) || 14;
 
+// Borderline alerts get longer. The limit above exists because REPLYING to a
+// stale post is wasted effort — but a borderline alert asks the reader to
+// judge whether the suggested reply fits, and a judgement is just as useful on
+// an older post. Blocking those would silence the training signal the whole
+// feature exists to collect. Ilan's first borderline test was refused at
+// exactly 14 days, which is what surfaced this.
+const MAX_BORDERLINE_AGE_DAYS = Number(process.env.MAX_BORDERLINE_AGE_DAYS) || 45;
+
 /**
  * Whether an alert should be refused for being about an old post.
  *
@@ -46,9 +54,10 @@ const MAX_POST_AGE_DAYS = Number(process.env.MAX_POST_AGE_DAYS) || 14;
  *
  * @returns {{stale: boolean, ageDays: number|null}}
  */
-function checkFreshness(postUrl, now = Date.now()) {
+function checkFreshness(postUrl, { now = Date.now(), borderline = false } = {}) {
   const ageDays = postAgeDays(postUrl, now);
-  return { stale: ageDays !== null && ageDays > MAX_POST_AGE_DAYS, ageDays };
+  const limit = borderline ? MAX_BORDERLINE_AGE_DAYS : MAX_POST_AGE_DAYS;
+  return { stale: ageDays !== null && ageDays > limit, ageDays, limit };
 }
 
-module.exports = { postAgeDays, checkFreshness, MAX_POST_AGE_DAYS };
+module.exports = { postAgeDays, checkFreshness, MAX_POST_AGE_DAYS, MAX_BORDERLINE_AGE_DAYS };

@@ -174,6 +174,11 @@
   .verdict-btn:disabled{ opacity:0.5; pointer-events:none; }
   .verdict-done{ margin:0; font-size:13.5px; color:#8aa097; }
   .verdict-note{ margin:0; font-size:13.5px; color:#d7c0ae; line-height:1.5; }
+  .verdict-why{
+    margin:0; font-size:14px; color:#eaf6f8; line-height:1.5;
+    background:rgba(0,0,0,0.18); border-radius:10px; padding:8px 10px;
+  }
+  .verdict-why[hidden]{ display:none; }
   .verdict-note a{ color:var(--gold); text-decoration:underline; font-weight:700; }
 
   .card-wrap{ position:relative; display:flex; flex-direction:column; flex:none; }
@@ -421,6 +426,7 @@
 
   <div class="verdict" id="verdict" hidden>
     <p class="verdict-q">האם התגובה שלמטה מתאימה לפוסט הזה?</p>
+    <p class="verdict-why" id="verdictWhy" hidden></p>
     <p class="verdict-note" id="verdictNote" hidden></p>
     <div class="verdict-row">
       <button class="verdict-btn" id="verdictYes">מתאימה ✓</button>
@@ -525,6 +531,7 @@ const els = {
   verdictNo: document.getElementById('verdictNo'),
   verdictDone: document.getElementById('verdictDone'),
   verdictNote: document.getElementById('verdictNote'),
+  verdictWhy: document.getElementById('verdictWhy'),
   socialIcon: document.getElementById('socialIcon'),
   card: document.getElementById('card'),
   quoteText: document.getElementById('quoteText'),
@@ -548,7 +555,7 @@ const els = {
   reportSend: document.getElementById('reportSend')
 };
 
-const PAGE = { claim: '', postSummary: '', postText: '', borderline: false, debunk: '', postUrl: null, sourceUrl: null, sourceShort: null, network: null };
+const PAGE = { claim: '', postSummary: '', postText: '', borderline: false, borderlineReason: '', mediaOnly: false, debunk: '', postUrl: null, sourceUrl: null, sourceShort: null, network: null };
 
 // Each recipient's link carries a variant index, so the people drawn for one
 // alert don't all post the identical sentence.
@@ -692,7 +699,10 @@ async function loadVariants(){
         // then shows the post's FULL text and asks whether the suggested reply
         // fits it, instead of presenting a rebuttal as settled.
         borderline: fields.borderline && fields.borderline.booleanValue === true,
-        postText: (fields.postText && fields.postText.stringValue) || ''
+        postText: (fields.postText && fields.postText.stringValue) || '',
+        // Why the server is unsure, and whether the post is video/image only.
+        borderlineReason: (fields.borderlineReason && fields.borderlineReason.stringValue) || '',
+        mediaOnly: fields.mediaOnly && fields.mediaOnly.booleanValue === true
       };
     }
     // Alerts generated before gendered variants existed.
@@ -851,20 +861,32 @@ function applyBorderline(){
   document.body.classList.add('is-borderline');
   if(els.verdict) els.verdict.hidden = false;
 
+  // "We are not sure" is far less useful than knowing WHAT is uncertain, and
+  // the server now tells us.
+  if(els.verdictWhy && PAGE.borderlineReason){
+    els.verdictWhy.textContent = 'למה לא בטוחים: ' + PAGE.borderlineReason;
+    els.verdictWhy.hidden = false;
+  }
+
   // A video or image post cannot be judged from text alone. There are two ways
   // through it and the reader should know both: the text above may already be
   // the transcript, or they can watch the post and come back. Coming back means
   // reopening this link from WhatsApp, which reloads the page — so the verdict
   // is remembered locally and restored, or the round trip would cost them the
   // answer they already gave.
+  //
+  // When the server says the post is media-only, say so plainly instead of
+  // hedging with "if this is a video".
   if(els.verdictNote && PAGE.postUrl){
     els.verdictNote.textContent = '';
-    els.verdictNote.append('אם זה וידאו או תמונה: אפשר לשפוט לפי הטקסט שלמעלה, או ');
+    els.verdictNote.append(PAGE.mediaOnly
+      ? 'הפוסט הוא וידאו או תמונה — הטקסט כאן הוא מה שיש לנו עליו. כדאי '
+      : 'אם זה וידאו או תמונה: אפשר לשפוט לפי הטקסט שלמעלה, או ');
     const a = document.createElement('a');
     a.href = PAGE.postUrl;
     a.target = '_blank';
     a.rel = 'noopener';
-    a.textContent = 'לצפות בפוסט';
+    a.textContent = PAGE.mediaOnly ? 'לצפות בפוסט' : 'לצפות בפוסט';
     a.addEventListener('click', () => track('borderline_view_post'));
     els.verdictNote.append(a);
     els.verdictNote.append(' ולחזור לכאן. התשובה שלכם נשמרת.');
@@ -1219,6 +1241,8 @@ async function init(){
   PAGE.sourceShort = loaded.sourceShort || null;
   PAGE.borderline = loaded.borderline === true;
   PAGE.postText = loaded.postText || '';
+  PAGE.borderlineReason = loaded.borderlineReason || '';
+  PAGE.mediaOnly = loaded.mediaOnly === true;
   PAGE.network = networkFromUrl(PAGE.postUrl || '');
 
   const slot = Number.isInteger(variantIndex) && variantIndex >= 0 ? variantIndex : 0;

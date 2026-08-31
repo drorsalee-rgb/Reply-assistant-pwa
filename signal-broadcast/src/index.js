@@ -21,7 +21,7 @@ const { checkPostClaims } = require('./grounding');
 const { resolvePostSummary } = require('./postSummary');
 const notify = require('./notify');
 const { shorten } = require('./shortLinks');
-const { checkFreshness, MAX_POST_AGE_DAYS } = require('./freshness');
+const { checkFreshness } = require('./freshness');
 const { checkPrompts } = require('./promptWatch');
 const { DEFAULT_NETWORKS } = require('./preferences');
 
@@ -730,7 +730,7 @@ function planBlocks(total, people){
   return { perPerson, servable: Math.min(people, Math.floor(total / perPerson)) };
 }
 
-async function variantsFor(messageId, debunk, people, maxChars, claim, postUrl, postText, provided, postSummary, sourceShort, borderline){
+async function variantsFor(messageId, debunk, people, maxChars, claim, postUrl, postText, provided, postSummary, sourceShort, borderline, borderlineReason, mediaOnly){
   const wanted = people * WORDINGS_PER_PERSON;
   const ref = db.collection(DEBUNK_VARIANTS).doc(String(messageId).slice(0, 200));
   const existing = await ref.get();
@@ -804,6 +804,8 @@ async function variantsFor(messageId, debunk, people, maxChars, claim, postUrl, 
         postSummary: postSummary || null,
         sourceShort: sourceShort || null,
         borderline: borderline === true,
+        borderlineReason: borderlineReason || null,
+        mediaOnly: mediaOnly === true,
         createdAt: FieldValue.serverTimestamp()
       });
       console.log(`upstream wordings: ${male.length} usable -> ${plan.perPerson} each for ${plan.servable} recipients`);
@@ -860,6 +862,8 @@ async function variantsFor(messageId, debunk, people, maxChars, claim, postUrl, 
     postSummary: postSummary || null,
     sourceShort: sourceShort || null,
     borderline: borderline === true,
+    borderlineReason: borderlineReason || null,
+    mediaOnly: mediaOnly === true,
     // Kept so a disputed wording can be traced to the fact and the page it
     // came from, rather than argued about from memory.
     groundedFindings: findings,
@@ -982,6 +986,9 @@ app.post('/api/broadcast-fake-hunting', async (req, res) => {
     // says, and what the page asks the reader to do.
     const borderline = body.borderline === true
       || (alertDoc && alertDoc.exists ? alertDoc.data().borderline === true : false);
+    // Why the server is unsure, and whether the post is video/image only.
+    const borderlineReason = String(body.borderline_reason || '').trim().slice(0, 500);
+    const mediaOnly = body.media_only === true;
 
     const providedSummary = String(body.post_summary
       || (alertDoc && alertDoc.exists ? alertDoc.data().post_summary : '')
@@ -999,17 +1006,22 @@ app.post('/api/broadcast-fake-hunting', async (req, res) => {
     //
     // Refused rather than dropped: a 4xx tells the caller, and the counter is
     // the earliest visible symptom of a partner re-sending history.
-    const freshness = checkFreshness(postUrl);
+    const freshness = checkFreshness(postUrl, { borderline });
     if(freshness.stale){
-      console.log(rid, `refusing stale alert: post is ${Math.round(freshness.ageDays)} days old`);
+      console.log(rid, `refusing stale alert: post is ${freshness.ageDays.toFixed(1)} days old `
+        + `(limit ${freshness.limit}${borderline ? ', borderline' : ''})`);
       await sendAlert('stale-alerts',
-        `התקבלה התראה על פוסט בן ${Math.round(freshness.ageDays)} ימים ולא נשלחה. `
+        `התקבלה התראה על פוסט בן ${freshness.ageDays.toFixed(1)} ימים (הסף: ${freshness.limit}) ולא נשלחה. `
         + `ייתכן שהשרת של אילן משדר מחדש היסטוריה — כדאי לבדוק.`,
         rid, { title: 'התראה על פוסט ישן נחסמה', footer: '' });
+      // One decimal, not a round number: "14 days old; the limit is 14" read
+      // like an off-by-one when the post was really 14.3 days old.
       return respond(422, {
-        error: `Post is ${Math.round(freshness.ageDays)} days old; the limit is ${MAX_POST_AGE_DAYS}`,
+        error: `Post is ${freshness.ageDays.toFixed(1)} days old; the limit is ${freshness.limit}`,
         reason: 'stale_post',
-        age_days: Math.round(freshness.ageDays),
+        age_days: Number(freshness.ageDays.toFixed(1)),
+        limit_days: freshness.limit,
+        borderline,
         retryable: false
       });
     }
@@ -1077,7 +1089,7 @@ app.post('/api/broadcast-fake-hunting', async (req, res) => {
     let servable = 0;
     if(debunk){
       try{
-        servable = await variantsFor(message_id, debunk, recipients.length, maxChars, claim, postUrl, postText, providedVariants, postSummary, sourceShort, borderline);
+        servable = await variantsFor(message_id, debunk, recipients.length, maxChars, claim, postUrl, postText, providedVariants, postSummary, sourceShort, borderline, borderlineReason, mediaOnly);
       }catch(e){
         console.error(rid, 'variant generation failed:', e.message);
       }
@@ -1139,8 +1151,10 @@ app.post('/api/broadcast-fake-hunting', async (req, res) => {
     const alertLine = borderline
       ? truncate(cleanSnippet(postText) || postSummary || claim, 400)
       : truncate(postSummary || claim);
+    const reasonLine = borderline && borderlineReason
+      ? `\n\n*למה לא בטוחים:* ${truncate(borderlineReason, 200)}` : '';
     const messageFor = index => borderline
-      ? `🤔 *פוסט שדורש בדיקה* — לא בטוחים לגביו 👇\n\n${alertLine}\n\n`
+      ? `🤔 *פוסט שדורש בדיקה* — לא בטוחים לגביו 👇\n\n${alertLine}${reasonLine}\n\n`
         + `נשמח שתבדקו אם התגובה המוצעת מתאימה לפוסט:\n${linkFor(index)}`
       : `🔍 זוהה פוסט מטעה שכדאי להפריך 👇\n\n${alertLine}\n\n`
         + `לחצו כאן להפרכה מוכנה:\n${linkFor(index)}`;
