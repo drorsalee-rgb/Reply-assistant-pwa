@@ -4,7 +4,11 @@
 # Usage:
 #   ./link-group.sh                                  — list all groups with their ids
 #   ./link-group.sh "<signal group name>" <provider_id>  — link a group to a provider
-# Example: ./link-group.sh "יוריקי חמ״ל בחירות" hamal_behirot
+# The name must match a SIGNAL group exactly, so take it from the no-argument
+# listing above rather than typing it from memory — these are Signal groups,
+# not the WhatsApp groups Beacon posts to, and the two sets have different
+# names. Provider ids are the doc ids in content_providers (hamal_behirot,
+# ze_bayadayim, white_rose, …).
 #
 # Prerequisites: the Yoriki bot (+972559761823) must already be a member of
 # the group, and gcloud must be logged in as an account with access to the
