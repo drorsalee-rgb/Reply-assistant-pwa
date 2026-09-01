@@ -20,6 +20,7 @@ const { generateVariants } = require('./variants');
 const { checkPostClaims } = require('./grounding');
 const { resolvePostSummary } = require('./postSummary');
 const notify = require('./notify');
+const announce = require('./announce');
 const { shorten } = require('./shortLinks');
 const { checkFreshness } = require('./freshness');
 const { checkPrompts } = require('./promptWatch');
@@ -1330,6 +1331,48 @@ app.get('/api/check-whatsapp', async (req, res) => {
 
 // Operator-to-operator messages, to a fixed allowlist. See src/notify.js for
 // why the recipients are pinned rather than passed in freely.
+// One announcement to every active fake-hunting volunteer. See announce.js for
+// why this is a separate door rather than a bigger /api/notify.
+app.post('/api/announce', async (req, res) => {
+  const rid = requestId();
+
+  // The pool is read BEFORE validating, because `confirm` is checked against
+  // the live count — the caller is confirming who this reaches now, not who it
+  // would have reached when they drafted the message.
+  const snap = await db.collection(OPTINS).where('active', '==', true).get();
+  const phones = [...new Set(snap.docs.map(d => d.data().phone || d.id).filter(Boolean))];
+
+  const checked = announce.validate(req.body, phones.length);
+  if(!checked.ok){
+    console.log(rid, 'announce refused:', checked.error);
+    return res.status(checked.status).json({ error: checked.error, requestId: rid });
+  }
+
+  const labels = phones.map(notify.phoneLabel);
+  if(checked.dryRun){
+    console.log(rid, `announce dry run: ${phones.length} recipients`);
+    return res.json({ ok: true, dry_run: true, recipients: phones.length,
+      to: labels, message: checked.message, requestId: rid });
+  }
+
+  console.log(rid, `announce sending to ${phones.length} volunteers`);
+  const results = [];
+  for(const phone of phones){
+    const label = notify.phoneLabel(phone);
+    // One failure must not cost the other eighteen their message.
+    try{
+      await beacon.sendMessage({ phoneNumbers: [phone], message: checked.message });
+      results.push({ phone: label, ok: true });
+    }catch(e){
+      console.error(rid, `announce failed for ${label}: ${e.message}`);
+      results.push({ phone: label, ok: false, error: e.message });
+    }
+  }
+  const sent = results.filter(r => r.ok).length;
+  console.log(rid, `announce done: ${sent}/${phones.length} delivered`);
+  return res.json({ ok: sent > 0, sent, failed: phones.length - sent, results, requestId: rid });
+});
+
 app.post('/api/notify', async (req, res) => {
   const rid = requestId();
   const checked = notify.validate(req.body);
