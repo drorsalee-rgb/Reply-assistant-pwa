@@ -678,11 +678,19 @@ const CONFIG = 'broadcast-config';
 const FAKE_HUNT_MESSAGES = 'fake-hunt-messages';   // {message_id} -> dedupe record
 const FAKE_HUNTING_ALERTS = 'fake-hunting-messages'; // written by the orchestrator
 const MAX_FAKE_HUNT_N = 100;
-// How many people each Fake Hunting alert goes to. The orchestrator sends its
-// own N, but the fan-out is our call, not theirs — it depends on the size of
-// our pool and how often we're willing to message the same person. Set
-// FAKE_HUNT_N to change it without touching the orchestrator.
-const FAKE_HUNT_N = Number(process.env.FAKE_HUNT_N) || 4;
+// How many people each Fake Hunting alert goes to comes from the orchestrator,
+// which reads it from fake-hunting-config/runtime.N_signal in Firestore. That
+// is the single place it is set, and it is editable from the dashboard.
+//
+// This used to be ours to decide, via a FAKE_HUNT_N constant that overrode
+// whatever the orchestrator asked for. The two drifted: Firestore said 5, the
+// constant said 4, and every alert went to 4 people for weeks while the
+// dashboard showed 5. The service logged the disagreement on every send and
+// nobody was reading that log. Two settings for one number is the bug — the
+// value that is easiest to find has to be the value that is used.
+//
+// MAX_FAKE_HUNT_N still bounds it: a bad config change should not be able to
+// message the entire pool.
 
 // The orchestrator sends a link to the content. When that link points at a
 // social network, it already tells us which one — no extra field needed.
@@ -973,9 +981,6 @@ app.post('/api/broadcast-fake-hunting', async (req, res) => {
       return respond(400, { error: `N must be an integer between 1 and ${MAX_FAKE_HUNT_N}` });
     }
 
-    if(count !== FAKE_HUNT_N){
-      console.log(rid, `orchestrator asked for N=${count}; using our fan-out of ${FAKE_HUNT_N}`);
-    }
 
     // The orchestrator may retry; never message people twice for one alert.
     const seenRef = db.collection(FAKE_HUNT_MESSAGES).doc(String(message_id).slice(0, 200));
@@ -985,7 +990,7 @@ app.post('/api/broadcast-fake-hunting', async (req, res) => {
       return respond(200, {
         ok: true, flow: 'fake_hunting_individuals',
         drawn_count: prev.drawnCount || 0, deduplicated: true,
-        wordings_needed: FAKE_HUNT_N * WORDINGS_PER_PERSON
+        wordings_needed: count * WORDINGS_PER_PERSON
       });
     }
 
@@ -1085,7 +1090,7 @@ app.post('/api/broadcast-fake-hunting', async (req, res) => {
     // is safe to use casually.
     const dryRun = body.dry_run === true;
 
-    const recipients = await selectRecipients(FAKE_HUNT_N, network, claimKeyOf(claim), { borderline });
+    const recipients = await selectRecipients(count, network, claimKeyOf(claim), { borderline });
     if(!recipients.length){
       return respond(409, {
         error: network
@@ -1188,7 +1193,7 @@ app.post('/api/broadcast-fake-hunting', async (req, res) => {
         flow: 'fake_hunting_individuals',
         would_send_to: recipients.length,
         variants: variantCount,
-        wordings_needed: FAKE_HUNT_N * WORDINGS_PER_PERSON,
+        wordings_needed: count * WORDINGS_PER_PERSON,
         network: network || null,
         // The line recipients would actually read, so a dry run shows whether
         // the summary arrived, was generated, or fell back to the claim.
@@ -1237,7 +1242,7 @@ app.post('/api/broadcast-fake-hunting', async (req, res) => {
       // know this in advance — but it can read it from any response and use it
       // for the next alert. That keeps the two sides aligned without a config
       // handshake, and without coupling generation to our availability.
-      wordings_needed: FAKE_HUNT_N * WORDINGS_PER_PERSON,
+      wordings_needed: count * WORDINGS_PER_PERSON,
       ...(failed.length ? { failed_count: failed.length } : {})
     });
   }catch(err){
