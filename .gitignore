@@ -4,3 +4,6 @@ firebase-debug.log
 
 .DS_Store
 .claude/
+
+# Local backup of the Claude memory directory — never commit.
+.claude-memory-backup/
