@@ -237,19 +237,65 @@ function keepsFacts(variant, terms, originalLength = 0){
   return present >= required;
 }
 
-async function generateOnce(debunk, count, maxChars, claim, insist = false, postText = '', findings = []){
-  if(!debunk || count < 1) return { male: [], female: [] };
+// On 2026-09-03 a single gemini-proxy 500 aborted generation entirely: the
+// fetch below threw, nothing caught it, and the alert that should have been
+// refused (the debunk was 374 characters against a 256-character budget for
+// X) instead went out to one volunteer as raw, unchecked text — because the
+// "too long, refuse to send" safety check only ever ran when generation
+// completed; a transient failure skipped it rather than triggering it.
+//
+// So a transient failure here must not look like "nothing fits" (which is
+// what silently produced the unsafe fallback) or "give up instantly" (which
+// wastes the many wordings the retry loop above this would have produced).
+// It has to look like an ordinary failed attempt, retried a few times, and
+// only surfaced once retrying stops helping.
+const PROXY_RETRY_ATTEMPTS = Number(process.env.GEMINI_PROXY_RETRY_ATTEMPTS) || 3;
+// Between attempts 1->2 and 2->3. Overridable so tests can simulate a
+// sustained outage without a sustained wait.
+const PROXY_RETRY_DELAYS_MS = (process.env.GEMINI_PROXY_RETRY_DELAY_MS || '1000,3000')
+  .split(',').map(Number);
+
+function sleep(ms){ return new Promise(resolve => setTimeout(resolve, ms)); }
+
+async function callGeminiProxyOnce(prompt){
   const token = await identityToken(GEMINI_PROXY_URL);
   const res = await fetch(GEMINI_PROXY_URL, {
     method: 'POST',
     headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ prompt: buildPrompt(debunk, count, maxChars, claim, insist, postText, findings) })
+    body: JSON.stringify({ prompt })
   });
   if(!res.ok){
     const text = await res.text();
-    throw new Error(`gemini-proxy failed (${res.status}): ${text.slice(0, 200)}`);
+    const err = new Error(`gemini-proxy failed (${res.status}): ${text.slice(0, 200)}`);
+    // 4xx means our own request was malformed — retrying sends the identical
+    // bad request and just delays the inevitable. Only 5xx and network-level
+    // failures (which never reach this branch; see the catch below) are the
+    // "service is having a moment" case retrying is for.
+    err.retryable = res.status >= 500;
+    throw err;
   }
-  const data = await res.json();
+  return res.json();
+}
+
+async function callGeminiProxy(prompt){
+  let lastErr;
+  for(let attempt = 1; attempt <= PROXY_RETRY_ATTEMPTS; attempt++){
+    try{
+      return await callGeminiProxyOnce(prompt);
+    }catch(e){
+      lastErr = e;
+      const retryable = e.retryable !== false;   // network errors carry no status; treat as retryable
+      if(!retryable || attempt === PROXY_RETRY_ATTEMPTS) throw e;
+      console.log(`gemini-proxy attempt ${attempt} failed (${e.message}); retrying in ${PROXY_RETRY_DELAYS_MS[attempt - 1]}ms`);
+      await sleep(PROXY_RETRY_DELAYS_MS[attempt - 1]);
+    }
+  }
+  throw lastErr;
+}
+
+async function generateOnce(debunk, count, maxChars, claim, insist = false, postText = '', findings = []){
+  if(!debunk || count < 1) return { male: [], female: [] };
+  const data = await callGeminiProxy(buildPrompt(debunk, count, maxChars, claim, insist, postText, findings));
   const parsed = parseVariants(data.response);
   if(parsed.subjectUnclear){
     console.log('generation reported the debunk has no identifiable subject');
@@ -308,8 +354,20 @@ async function generateVariants(debunk, needed, { maxAttempts = 5, maxChars = nu
 
   for(let attempt = 1; attempt <= maxAttempts && male.length < needed; attempt++){
     const missing = needed - male.length;
-    // Ask for a couple of spares: some get rejected by the quality checks.
-    const batch = await generateOnce(debunk, Math.min(missing + 2, 8), maxChars, claim, false, postText, findings);
+    let batch;
+    try{
+      // Ask for a couple of spares: some get rejected by the quality checks.
+      batch = await generateOnce(debunk, Math.min(missing + 2, 8), maxChars, claim, false, postText, findings);
+    }catch(e){
+      // callGeminiProxy already retried the transient case internally; a
+      // throw here means it gave up. Treated the same as "this attempt
+      // produced nothing usable" rather than aborting generation outright —
+      // that abort is exactly what let an unchecked, over-length debunk reach
+      // a volunteer on 2026-09-03, by skipping the too-long check below
+      // entirely instead of triggering it.
+      console.error(`variant attempt ${attempt} failed: ${e.message}`);
+      continue;
+    }
     if(batch.subjectUnclear) return { male: [], female: [], subjectUnclear: true };
     batch.male.forEach((text, i) => {
       const key = text.replace(/\s+/g, ' ').trim();
@@ -333,7 +391,12 @@ async function generateVariants(debunk, needed, { maxAttempts = 5, maxChars = nu
     // volunteer a reply the network rejects, so make one last attempt that
     // asks for nothing but brevity.
     console.log(`nothing fit ${maxChars} chars; one salvage attempt at a short wording`);
-    const salvage = await generateOnce(debunk, 1, maxChars, claim, true, postText, findings);
+    let salvage = { male: [] };
+    try{
+      salvage = await generateOnce(debunk, 1, maxChars, claim, true, postText, findings);
+    }catch(e){
+      console.error(`salvage attempt failed: ${e.message}`);
+    }
     if(salvage.male.length){
       console.log(`salvage produced a ${salvage.male[0].length}-character wording`);
       return { male: salvage.male, female: salvage.female, subjectUnclear: false };
@@ -346,4 +409,4 @@ async function generateVariants(debunk, needed, { maxAttempts = 5, maxChars = nu
   return { male, female, subjectUnclear: false };
 }
 
-module.exports = { generateVariants, parseVariants, buildPrompt, keyTerms, keepsFacts, soundsNatural, startsWithFact, namesTheActor };
+module.exports = { generateVariants, parseVariants, buildPrompt, keyTerms, keepsFacts, soundsNatural, startsWithFact, namesTheActor, callGeminiProxy };

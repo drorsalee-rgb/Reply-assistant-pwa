@@ -185,16 +185,27 @@ function cleanSnippet(text){
     .trim();
 }
 
-function isMostlyEnglish(text){
+// Named for what it actually checks now. It used to gate on Latin letters
+// specifically, which is why a borderline alert once quoted an Arabic post
+// verbatim to a Hebrew-reading volunteer on 2026-09-03: Arabic has no Latin
+// letters, so the old check saw nothing to translate. Any script that isn't
+// Hebrew counts now — Latin, Arabic, Cyrillic, whatever the source post is
+// actually written in.
+function needsTranslation(text){
   const hebrew = (text.match(/[֐-׿]/g) || []).length;
-  const latin = (text.match(/[A-Za-z]/g) || []).length;
-  return latin > 0 && hebrew / (hebrew + latin) < 0.34;
+  const other = (text.match(/\p{L}/gu) || []).length - hebrew;
+  return other > 0 && hebrew / (hebrew + other) < 0.34;
 }
 
 async function translateToHebrew(text){
   try{
     const source = text.slice(0, 1500);   // keep the request URL sane
-    const res = await fetch('https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=he&dt=t&q='
+    // sl=auto, not a fixed source language: the old sl=en meant Arabic (or
+    // any non-English, non-Hebrew script) was asked for as if it were
+    // English, which produces nonsense or an outright no-op depending on the
+    // source. Auto-detection is what needsTranslation's broader script check
+    // above was for — one without the other still doesn't help.
+    const res = await fetch('https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=he&dt=t&q='
       + encodeURIComponent(source));
     if(!res.ok) return null;
     const data = await res.json();
@@ -208,7 +219,7 @@ async function translateToHebrew(text){
 // Clean, translate if needed, then trim to message length.
 async function prepareSnippet(text, rid){
   let snippet = cleanSnippet(text);
-  if(snippet && isMostlyEnglish(snippet)){
+  if(snippet && needsTranslation(snippet)){
     const translated = await translateToHebrew(snippet);
     if(translated) snippet = cleanSnippet(translated);
     else console.log(rid, 'translation failed; sending the original summary');
@@ -1223,8 +1234,21 @@ app.post('/api/broadcast-fake-hunting', async (req, res) => {
     // a notification should not start from "here is a fake to rebut" when the
     // system is not sure it is one — and for these the full post text is what
     // the reader has to judge, so it replaces the summary.
+    //
+    // On 2026-09-03 a borderline alert quoted an Arabic post verbatim to a
+    // Hebrew-reading volunteer, who was then asked to judge whether a Hebrew
+    // reply "fits" text they cannot read. Translation already existed
+    // elsewhere in this file for a different flow; it was never wired into
+    // this one. Only the borderline branch needs it — the non-borderline line
+    // is postSummary/claim, both of which we generate in Hebrew ourselves.
+    let borderlinePostLine = cleanSnippet(postText);
+    if(borderlinePostLine && needsTranslation(borderlinePostLine)){
+      const translated = await translateToHebrew(borderlinePostLine);
+      if(translated) borderlinePostLine = cleanSnippet(translated);
+      else console.log(rid, 'post-text translation failed; showing the original language');
+    }
     const alertLine = borderline
-      ? truncate(cleanSnippet(postText) || postSummary || claim, 400)
+      ? truncate(borderlinePostLine || postSummary || claim, 400)
       : truncate(postSummary || claim);
     const reasonHe = borderline ? borderlineReasonText(borderlineReason) : '';
     const reasonLine = reasonHe ? `\n\n*למה לא בטוחים:* ${truncate(reasonHe, 200)}` : '';
