@@ -109,6 +109,35 @@ function confirmationMessage({ action, networks, borderline }, { isNew = false }
   return `${opening}\n\n${scope}${borderlineLine(borderline)}\n\n${HOW_TO_CHANGE}`;
 }
 
+// What an already-registered person is signed up for, read from their stored
+// document rather than re-derived — this must show what IS, never write
+// anything.
+//
+// Exists because an unclear message from a known number used to fall through
+// to recordOptIn with networks:[], which is read downstream as "every
+// network" and silently overwrote a deliberate choice like "X only" with the
+// full default set. The fix is this: a registered person who sends something
+// we cannot parse gets told what they are currently signed up for, and
+// nothing is written. That directly answers the question this exists to
+// answer ("which network am I even registered under?") instead of quietly
+// changing the answer.
+function statusMessage(optin){
+  // Removal only ever flips `active`; the old `networks` value is left in the
+  // document. Reporting it here would tell someone we already removed that
+  // they are still signed up.
+  if(optin.active === false){
+    return 'לא רשום/ה אצלנו כרגע לקבלת התראות. ' + HOW_TO_CHANGE;
+  }
+  const networks = Array.isArray(optin.networks) ? optin.networks : [];
+  const coversDefault = !networks.length
+    || DEFAULT_NETWORKS.every(n => networks.includes(n));
+  const scope = coversDefault
+    ? `את/ה רשום/ה לקבל התראות על **כל הרשתות**: ${networkNames(networks)}.`
+    : `את/ה רשום/ה לקבל התראות על: **${networkNames(networks)}**.`;
+  return `הנה מה שרשום אצלנו עבורך כרגע:\n\n${scope}` +
+    `${borderlineLine(optin.borderline === true ? true : null)}\n\n${HOW_TO_CHANGE}`;
+}
+
 // Someone whose message we could not parse has not asked to join — they may be
 // asking what this is. Registering them anyway and announcing "you are signed
 // up" is how a volunteer came to receive a fake-hunting alert she never
@@ -122,4 +151,4 @@ function invitationMessage(){
     'לא רשמתי אותך לשום דבר עדיין.';
 }
 
-module.exports = { parseMessage, confirmationMessage, invitationMessage, networkNames, ALL_NETWORKS, DEFAULT_NETWORKS };
+module.exports = { parseMessage, confirmationMessage, invitationMessage, statusMessage, networkNames, ALL_NETWORKS, DEFAULT_NETWORKS };

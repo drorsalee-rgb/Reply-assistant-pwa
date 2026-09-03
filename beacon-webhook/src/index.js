@@ -9,7 +9,7 @@
 const express = require('express');
 const { Firestore, FieldValue } = require('@google-cloud/firestore');
 const { verifySignature, VerificationError } = require('./verify');
-const { parseMessage, confirmationMessage, invitationMessage } = require('./preferences');
+const { parseMessage, confirmationMessage, invitationMessage, statusMessage } = require('./preferences');
 const beacon = require('./beacon');
 
 const db = new Firestore();
@@ -306,6 +306,29 @@ app.post('/webhook', express.raw({ type: '*/*', limit: '1mb' }), async (req, res
         console.log('unrecognised message from an unknown number: invited, not registered');
         return res.status(200).json({ ok: true, action: 'invited' });
       }
+
+      // Known number, unparseable message. This used to fall through to
+      // recordOptIn with networks:[] — read downstream as "every network" —
+      // which silently overwrote a deliberate choice like "X only" with the
+      // full default set. A person asking (in any words we don't recognise)
+      // "which network am I even signed up for" was answered by having their
+      // answer changed instead of shown. Nothing is written here; the reply
+      // states what is already on file.
+      if(muted){
+        console.log('unrecognised message from a muted, already-registered number: no reply');
+        return res.status(200).json({ ok: true, action: 'muted' });
+      }
+      if(!shouldReply(phone)){
+        console.warn('status reply suppressed by the loop guard');
+        return res.status(200).json({ ok: true, action: 'status', reply: 'suppressed' });
+      }
+      const greeting = name ? `היי ${name.split(' ')[0]}! ` : '';
+      await beacon.sendMessage({
+        phoneNumbers: [phone],
+        message: greeting + statusMessage(known.data())
+      });
+      console.log('unrecognised message from a known number: sent status, left preferences untouched');
+      return res.status(200).json({ ok: true, action: 'status' });
     }
 
     const { isNew } = await recordOptIn(phone, parsed, name);
