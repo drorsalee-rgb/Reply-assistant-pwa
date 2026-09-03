@@ -739,6 +739,46 @@ function planBlocks(total, people){
   return { perPerson, servable: Math.min(people, Math.floor(total / perPerson)) };
 }
 
+// Latin letters spliced into the middle of a Hebrew word — "חilצו" for
+// "חילצו" — which a model occasionally emits and which no proofreading on our
+// side would have caught, because the sentence still scans. One went out to
+// volunteers on 2026-09-03.
+//
+// This matters more than a bad post description: a wording is published under
+// a volunteer's own name, and a garbled word there makes THEM look careless in
+// public.
+//
+// Only a Latin run with Hebrew on BOTH sides counts. "פורסם בX" and "לפי
+// Reuters" are ordinary Hebrew writing and must keep working, so a Latin run
+// that merely follows or precedes Hebrew is not enough.
+const CORRUPTED_WORD = /[\u0590-\u05FF][A-Za-z]+[\u0590-\u05FF]/;
+
+function wordingIsClean(text){
+  const t = String(text || '');
+  if(!t.trim()) return false;
+  if(CORRUPTED_WORD.test(t)) return false;
+  // Backticks belong to instructions about text, never to a published reply.
+  if(t.includes('`')) return false;
+  return true;
+}
+
+// Drops corrupted wordings while keeping the male/female arrays aligned — they
+// are indexed in step, so a wording can only be removed from both at once.
+function dropCorrupted(male, female, rid = ''){
+  const keptM = [];
+  const keptF = [];
+  male.forEach((m, i) => {
+    const f = (female || [])[i] || m;
+    if(wordingIsClean(m) && wordingIsClean(f)){
+      keptM.push(m);
+      keptF.push(f);
+      return;
+    }
+    console.error(rid, 'dropped a corrupted wording:', JSON.stringify(String(m).slice(0, 120)));
+  });
+  return { male: keptM, female: keptF };
+}
+
 async function variantsFor(messageId, debunk, people, maxChars, claim, postUrl, postText, provided, postSummary, sourceShort, borderline, borderlineReason, mediaOnly){
   const wanted = people * WORDINGS_PER_PERSON;
   const ref = db.collection(DEBUNK_VARIANTS).doc(String(messageId).slice(0, 200));
@@ -800,6 +840,10 @@ async function variantsFor(messageId, debunk, people, maxChars, claim, postUrl, 
       }
     }
 
+    const cleanedUpstream = dropCorrupted(male, female);
+    male.length = 0; male.push(...cleanedUpstream.male);
+    female.length = 0; female.push(...cleanedUpstream.female);
+
     if(male.length){
       const plan = planBlocks(male.length, people);
       await ref.set({
@@ -839,7 +883,9 @@ async function variantsFor(messageId, debunk, people, maxChars, claim, postUrl, 
     }
   }
 
-  const { male, female, subjectUnclear, tooLong } = await generateVariants(debunk, wanted, { maxChars, claim, postText, findings });
+  const generated = await generateVariants(debunk, wanted, { maxChars, claim, postText, findings });
+  const { subjectUnclear, tooLong } = generated;
+  const { male, female } = dropCorrupted(generated.male || [], generated.female || []);
   // The debunk never says who acted, and the claim doesn't settle it either.
   // Publishing it under someone's name risks blaming the wrong person.
   if(subjectUnclear) return -1;
