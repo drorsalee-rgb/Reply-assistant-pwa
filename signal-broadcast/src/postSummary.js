@@ -75,6 +75,45 @@ function hasSubject(text){
   return !/^\s*(הוא|היא|הם|הן|אמר|אמרה|טען|טענה|הצהיר|הצהירה|קרא|קראה)(?=\s|$)/.test(text);
 }
 
+// Does this even look like the Hebrew sentence we asked for?
+//
+// On 2026-09-03 an alert went out to volunteers whose "post description" was
+// the model's own deliberation, in English, verbatim:
+//
+//   (no quotation marks in the output). So avoid `"` or ''.
+//   Change `צה"לי` to `צה"ל` or just `חמוש` or `בנשק`.
+//
+// It came from upstream, and hasSubject waved it through because it does not
+// start with a pronoun. That check answers "is this a well-formed sentence",
+// not "is this a sentence at all", and nothing else stood between a model's
+// scratchpad and 140 volunteers.
+//
+// So: reject anything that is not plainly a Hebrew sentence. This cannot catch
+// a wrong summary — only an obviously non-summary one — but that is the class
+// of failure that embarrasses a volunteer publicly.
+function looksLikeSummary(text){
+  const s = String(text || '').trim();
+  if(!s) return false;
+
+  // Backticks and code fences belong to instructions about text, never to a
+  // description of a post.
+  if(/[`]|```/.test(s)) return false;
+
+  // One sentence. Reasoning arrives as multiple indented lines.
+  if(/\n/.test(s)) return false;
+
+  // Written for Hebrew-speaking volunteers. A brand name or a quoted foreign
+  // word is fine; a majority of Latin letters means it is not our sentence.
+  const hebrew = (s.match(/[֐-׿]/g) || []).length;
+  const latin  = (s.match(/[A-Za-z]/g) || []).length;
+  if(hebrew === 0 || latin > hebrew) return false;
+
+  // A summary opens with its subject, not with an aside or a list marker.
+  if(/^[([*\-–—]/.test(s)) return false;
+
+  return true;
+}
+
 /**
  * @returns {Promise<string|null>} the sentence, or null to fall back to the claim.
  */
@@ -100,6 +139,11 @@ async function summarisePost(postText, claim, rid = ''){
     const summary = cleanSummary(data.response);
     if(!summary){
       console.log(rid, 'post summary came back empty; falling back to the claim');
+      return null;
+    }
+    if(!looksLikeSummary(summary)){
+      console.error(rid, 'our own post summary is not a Hebrew sentence; falling back:',
+        JSON.stringify(summary.slice(0, 120)));
       return null;
     }
     if(!hasSubject(summary)){
@@ -130,14 +174,20 @@ async function summarisePost(postText, claim, rid = ''){
 async function resolvePostSummary(providedSummary, postText, claim, rid = ''){
   const provided = String(providedSummary || '').trim();
   if(provided){
-    if(hasSubject(provided)){
+    if(!looksLikeSummary(provided)){
+      // Loud, because this means a partner shipped something broken and the
+      // only other place it would have shown up is a volunteer's screen.
+      console.error(rid, 'upstream post summary is not a Hebrew sentence; ignoring it:',
+        JSON.stringify(provided.slice(0, 120)));
+    }else if(hasSubject(provided)){
       console.log(rid, 'using the upstream post summary');
       return provided;
+    }else{
+      console.log(rid, 'upstream post summary has no subject; generating our own');
     }
-    console.log(rid, 'upstream post summary has no subject; generating our own');
   }
   return summarisePost(postText, claim, rid);
 }
 
 module.exports = { summarisePost, resolvePostSummary, buildSummaryPrompt,
-  cleanSummary, hasSubject, MAX_CHARS };
+  cleanSummary, hasSubject, looksLikeSummary, MAX_CHARS };
