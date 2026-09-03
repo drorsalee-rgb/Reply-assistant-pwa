@@ -19,6 +19,7 @@ const beacon = require('./beacon');
 const { generateVariants } = require('./variants');
 const { checkPostClaims } = require('./grounding');
 const { resolvePostSummary } = require('./postSummary');
+const { needsTranslation, translateToHebrew } = require('./translate');
 const notify = require('./notify');
 const announce = require('./announce');
 const { shorten } = require('./shortLinks');
@@ -183,37 +184,6 @@ function cleanSnippet(text){
     .replace(/[ \t]+\n/g, '\n')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
-}
-
-// Named for what it actually checks now. It used to gate on Latin letters
-// specifically, which is why a borderline alert once quoted an Arabic post
-// verbatim to a Hebrew-reading volunteer on 2026-09-03: Arabic has no Latin
-// letters, so the old check saw nothing to translate. Any script that isn't
-// Hebrew counts now — Latin, Arabic, Cyrillic, whatever the source post is
-// actually written in.
-function needsTranslation(text){
-  const hebrew = (text.match(/[֐-׿]/g) || []).length;
-  const other = (text.match(/\p{L}/gu) || []).length - hebrew;
-  return other > 0 && hebrew / (hebrew + other) < 0.34;
-}
-
-async function translateToHebrew(text){
-  try{
-    const source = text.slice(0, 1500);   // keep the request URL sane
-    // sl=auto, not a fixed source language: the old sl=en meant Arabic (or
-    // any non-English, non-Hebrew script) was asked for as if it were
-    // English, which produces nonsense or an outright no-op depending on the
-    // source. Auto-detection is what needsTranslation's broader script check
-    // above was for — one without the other still doesn't help.
-    const res = await fetch('https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=he&dt=t&q='
-      + encodeURIComponent(source));
-    if(!res.ok) return null;
-    const data = await res.json();
-    const out = (data[0] || []).map(seg => seg[0]).filter(Boolean).join('');
-    return out || null;
-  }catch(e){
-    return null;
-  }
 }
 
 // Clean, translate if needed, then trim to message length.
