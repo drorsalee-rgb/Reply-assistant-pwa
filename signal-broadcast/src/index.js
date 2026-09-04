@@ -104,6 +104,28 @@ async function signalSend({ recipients, groupId, message, logo }){
 // ---- message templates ----
 // The network name is included so members who aren't active on that network
 // know to skip the link.
+// A WhatsApp group send that fails on the way out — a dropped connection, a
+// DNS hiccup, Beacon briefly unreachable — is usually fine a second later.
+// One that Beacon actively refuses is not: the bot is not in the group, or the
+// group no longer exists, and retrying only delays the alert that says so.
+const WHATSAPP_SEND_ATTEMPTS = Number(process.env.WHATSAPP_SEND_ATTEMPTS) || 3;
+const WHATSAPP_RETRY_DELAY_MS = Number(process.env.WHATSAPP_RETRY_DELAY_MS) || 1500;
+
+function isRetryableSendError(err){
+  const message = String(err && err.message || '');
+  // Beacon reports a refusal as an HTTP status in the message; those are
+  // decisions, not accidents. 5xx is Beacon itself having a problem.
+  const status = message.match(/\((\d{3})\)/);
+  if(status){
+    const code = Number(status[1]);
+    return code >= 500 || code === 429;
+  }
+  // No status at all means the request never got an answer — "fetch failed",
+  // a timeout, a socket reset. That is exactly the case worth retrying, and
+  // the one that cost the 147-member group its message.
+  return true;
+}
+
 const NETWORK_HE = {
   twitter: 'X', x: 'X', facebook: 'פייסבוק', instagram: 'אינסטגרם',
   tiktok: 'טיקטוק', youtube: 'יוטיוב', linkedin: 'לינקדאין'
@@ -589,17 +611,43 @@ app.post('/api/broadcast', async (req, res) => {
         // cannot post to would have silently cost the 140-member group its
         // message, depending only on the order of the array.
         for(const target of waTargets){
-          try{
-            // Groups dedicated to one network get a message without the
-            // network line, so they can't share a single send.
-            await beacon.sendMessage({
-              groupIds: [target.groupId],
-              message: forWhatsApp(messageFor(target))
-            });
-            whatsappGroupIds.push(target.groupId);
-          }catch(e){
-            whatsappFailures.push({ groupId: target.groupId, error: e.message });
-            console.error(rid, `WhatsApp send failed for ${target.groupId}:`, e.message);
+          // Retried per group, and ONLY the group that failed — a group that
+          // already received the message is no longer in this loop, so a retry
+          // cannot duplicate it.
+          //
+          // On 2026-09-04 a single "fetch failed" to Beacon cost the
+          // 147-member group its message while the 37- and 13-member groups
+          // got theirs. Beacon was connected and it was the only failure in
+          // two hours: a momentary network blip, and the kind a second attempt
+          // a second later almost always survives. Without this the only
+          // remedy was re-broadcasting to everyone, which duplicates for the
+          // groups that already succeeded.
+          let lastError = null;
+          for(let attempt = 1; attempt <= WHATSAPP_SEND_ATTEMPTS; attempt++){
+            try{
+              // Groups dedicated to one network get a message without the
+              // network line, so they can't share a single send.
+              await beacon.sendMessage({
+                groupIds: [target.groupId],
+                message: forWhatsApp(messageFor(target))
+              });
+              whatsappGroupIds.push(target.groupId);
+              if(attempt > 1) console.log(rid, `WhatsApp send to ${target.groupId} succeeded on attempt ${attempt}`);
+              lastError = null;
+              break;
+            }catch(e){
+              lastError = e;
+              // A send that Beacon actively refused will be refused again —
+              // the bot is not in the group, or the group is gone. Only
+              // transport-level failures are worth a second try.
+              if(!isRetryableSendError(e) || attempt === WHATSAPP_SEND_ATTEMPTS) break;
+              console.log(rid, `WhatsApp send to ${target.groupId} failed (${e.message}); retrying in ${WHATSAPP_RETRY_DELAY_MS}ms`);
+              await new Promise(r => setTimeout(r, WHATSAPP_RETRY_DELAY_MS));
+            }
+          }
+          if(lastError){
+            whatsappFailures.push({ groupId: target.groupId, error: lastError.message });
+            console.error(rid, `WhatsApp send failed for ${target.groupId}:`, lastError.message);
           }
         }
         if(whatsappFailures.length){
