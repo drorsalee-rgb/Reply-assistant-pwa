@@ -1,33 +1,41 @@
-// Two real incidents, same day, same code:
+// Translation of a post's own text, before a volunteer is asked to judge or
+// rebut it in Hebrew.
 //
-//   1. A borderline alert quoted an Arabic post verbatim to a Hebrew-reading
-//      volunteer — the check gating translation only looked for Latin
-//      letters, so Arabic was invisible to it.
-//   2. After fixing (1) with sl=auto, an English video summary that quoted a
-//      couple of sentences of Hebrew dialogue went out completely
-//      untranslated — Google's auto-detector saw the embedded Hebrew and
-//      called the whole blob's SOURCE language Hebrew, so sl=auto became
-//      sl=he and the translation was a silent no-op.
+// Three reports over two days, and the first two diagnoses were both wrong:
 //
-// These tests run against a mocked fetch so they don't depend on Google's
-// translate endpoint being reachable or behaving consistently over time.
+//   1. (2026-09-03) An Arabic post shown verbatim — blamed on the check
+//      gating translation only looking for Latin letters.
+//   2. (2026-09-03) An English summary shown verbatim — blamed on Google's
+//      auto-detector seeing embedded Hebrew quotes and reporting the source
+//      language as Hebrew, making the call a no-op.
+//   3. (2026-09-04) Another English summary. This time the production logs
+//      were checked: 90+ consecutive failures since 2026-08-23, zero
+//      successes. Translation had never worked in production. The
+//      translate.googleapis.com endpoint works from a laptop and not from
+//      Cloud Run; both earlier fixes changed logic that never ran.
+//
+// Now routed through gemini-proxy, which this service already uses
+// successfully from Cloud Run many times a day.
+
+// The proxy retries with backoff on failure; set before the require below so
+// the outage cases don't spend the real ~4s each.
+process.env.GEMINI_PROXY_RETRY_DELAY_MS = '1,1';
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
-const { needsTranslation, dominantForeignScript, translateToHebrew } = require('../src/translate.js');
+const { needsTranslation, translateToHebrew, buildTranslationPrompt } = require('../src/translate.js');
 
-function mockTranslateFetch(handler) {
+// translateToHebrew -> callGeminiProxy -> identityToken (metadata server),
+// then a POST to the proxy. Both hops go through fetch.
+function mockProxy(respond) {
   return async (url) => {
-    const q = decodeURIComponent(String(url).match(/[?&]q=([^&]+)/)[1]);
-    const sl = String(url).match(/[?&]sl=([^&]+)/)[1];
-    const { translated, detectedSource } = handler(q, sl);
-    return {
-      ok: true,
-      json: async () => [[[translated, q, null, null, 5]], null, detectedSource],
-    };
+    if (String(url).includes('metadata.google.internal')) {
+      return { ok: true, text: async () => 'fake-identity-token' };
+    }
+    return respond();
   };
 }
 
@@ -35,54 +43,69 @@ test('needsTranslation: only Hebrew is exempt, any other script counts', () => {
   assert.equal(needsTranslation('הפוסט טוען משהו בעברית תקנית לגמרי.'), false);
   assert.equal(needsTranslation('العربية النص هنا وليس فيه عبرية على الإطلاق'), true);
   assert.equal(needsTranslation('This entire sentence is in English.'), true);
-  assert.equal(needsTranslation('הפוסט מצטט את Reuters על האירוע.'), false, 'a Hebrew sentence with an embedded Latin brand is still Hebrew');
+  assert.equal(
+    needsTranslation('הפוסט מצטט את Reuters על האירוע.'),
+    false,
+    'a Hebrew sentence with an embedded Latin brand is still Hebrew'
+  );
 });
 
-test('dominantForeignScript picks the script that actually dominates', () => {
-  assert.equal(dominantForeignScript('This is English text with no other script.'), 'en');
-  assert.equal(dominantForeignScript('هذا نص عربي بالكامل'), 'ar');
-  assert.equal(dominantForeignScript('Это русский текст'), 'ru');
-  assert.equal(dominantForeignScript('123 456 !!!'), 'auto', 'no letters at all falls back to auto');
+test('the prompt tells the model to leave existing Hebrew alone', () => {
+  // Incident 2 was a mixed-language text. Whatever else changes, the
+  // instruction that keeps already-Hebrew quotes intact has to survive.
+  const prompt = buildTranslationPrompt('some text');
+  assert.match(prompt, /כבר כתובים בעברית/);
+  assert.match(prompt, /some text/);
 });
 
-test('incident 1: an Arabic post is detected and translated (regression)', async () => {
+test('incident 1: an Arabic post is translated (regression)', async () => {
   const original = global.fetch;
-  global.fetch = mockTranslateFetch((q, sl) => {
-    assert.equal(sl, 'ar', 'must ask for Arabic explicitly, not auto-detect');
-    return { translated: 'תרגום עברי תקין של הפוסט הערבי.' };
-  });
+  global.fetch = mockProxy(() => ({
+    ok: true,
+    json: async () => ({ response: 'משטרת ישראל עצרה פלסטינית שפתחה חשבונות מזויפים.' }),
+  }));
   try {
     const out = await translateToHebrew('نص عربي بالكامل يحتاج إلى ترجمة كاملة إلى العبرية هنا');
-    assert.equal(out, 'תרגום עברי תקין של הפוסט הערבי.');
+    assert.equal(out, 'משטרת ישראל עצרה פלסטינית שפתחה חשבונות מזויפים.');
   } finally {
     global.fetch = original;
   }
 });
 
-test('incident 2: sl=auto misdetecting mixed English+Hebrew as Hebrew is caught, not trusted', async () => {
+test('incident 2: a model that echoes its input is caught, not trusted', async () => {
   const original = global.fetch;
-  // Simulates exactly what Google's endpoint did: asked with an explicit
-  // source language, it still might echo the input back unchanged (a
-  // misbehaving or overridden endpoint) — the point of this test is that our
-  // OWN output verification catches a no-op regardless of why it happened.
-  const englishWithHebrewQuote = 'Main topic: a debate. Quote: "יושב כאן אדם" said the panelist about extremism in the discussion today.';
-  global.fetch = mockTranslateFetch((q, sl) => {
-    assert.equal(sl, 'en', 'the text is mostly Latin script, so it must be asked for as English, not auto');
-    return { translated: q };   // no-op: proxy for the real misdetection bug
-  });
+  const english = 'Main topic: a debate. Quote: "יושב כאן אדם" said the panelist about extremism today.';
+  global.fetch = mockProxy(() => ({
+    ok: true,
+    json: async () => ({ response: english }),   // no-op, as the old endpoint did
+  }));
   try {
-    const out = await translateToHebrew(englishWithHebrewQuote);
-    assert.equal(out, null, 'a no-op "translation" must be treated as a failure, not a success');
+    const out = await translateToHebrew(english);
+    assert.equal(out, null, 'output that still needs translation must count as a failure');
   } finally {
     global.fetch = original;
   }
 });
 
-test('a genuine failed HTTP response returns null', async () => {
+// Incident 3 is the important one: the transport itself failing. Before the
+// fix this was invisible — every failure was silently swallowed and the
+// English original was sent instead.
+test('incident 3: a proxy outage returns null so the caller falls back', async () => {
   const original = global.fetch;
-  global.fetch = async () => ({ ok: false, status: 500 });
+  global.fetch = mockProxy(() => ({ ok: false, status: 500, text: async () => 'down' }));
   try {
-    const out = await translateToHebrew('some text needing translation in English');
+    const out = await translateToHebrew('English text that needs translating into Hebrew');
+    assert.equal(out, null);
+  } finally {
+    global.fetch = original;
+  }
+});
+
+test('an empty model response returns null rather than an empty snippet', async () => {
+  const original = global.fetch;
+  global.fetch = mockProxy(() => ({ ok: true, json: async () => ({ response: '   ' }) }));
+  try {
+    const out = await translateToHebrew('English text that needs translating into Hebrew');
     assert.equal(out, null);
   } finally {
     global.fetch = original;
@@ -93,7 +116,7 @@ test('a network-level throw returns null rather than propagating', async () => {
   const original = global.fetch;
   global.fetch = async () => { throw new Error('network down'); };
   try {
-    const out = await translateToHebrew('some text needing translation in English');
+    const out = await translateToHebrew('English text that needs translating into Hebrew');
     assert.equal(out, null);
   } finally {
     global.fetch = original;
