@@ -20,6 +20,9 @@ const ALL_NETWORKS = Object.keys(NETWORK_KEYWORDS);
 // for them by name, but nobody is signed up for them by default.
 const DEFAULT_NETWORKS = ['x', 'facebook', 'instagram', 'tiktok'];
 const ALL_WORDS = ['הכל', 'הכול', 'כולם', 'כל הרשתות', 'all', 'everything'];
+// "הכל" is both our opt-in keyword and an everyday Hebrew word, so it only
+// counts in a message short enough to be a request rather than prose.
+const ALL_WORDS_MAX_WORDS = Number(process.env.ALL_WORDS_MAX_WORDS) || 4;
 const STOP_WORDS = ['הסר', 'הסירו', 'הסירי', 'עצור', 'עצרו', 'הפסק', 'הפסיקו',
                     'ביטול', 'בטל', 'בטלו', 'stop', 'unsubscribe', 'remove'];
 
@@ -34,6 +37,28 @@ function tokens(text){
   return String(text || '').toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(Boolean);
 }
 
+// Matches a phrase only as whole words, never inside a longer one.
+//
+// The registration keywords used to be checked with a plain substring test,
+// which meant ordinary Hebrew registered people who never asked. "הכל" is
+// inside "בהכללה"; "כולם" is inside "לכולם". On 2026-09-05 a partner
+// organisation's WhatsApp broadcast number was signed up as a volunteer for
+// all four networks because one of its broadcasts contained a word like
+// "לכולם" — it was seconds away from being sent our fake-hunting alerts.
+//
+// Hebrew prefixes (ב/ל/ו/ה/מ/ש/כ) are exactly what makes substring matching
+// wrong here: they turn an unrelated word into one that contains a keyword.
+// A phrase of several words is matched as a run of consecutive tokens.
+function hasPhrase(words, phrase){
+  const parts = tokens(phrase);
+  if(!parts.length) return false;
+  if(parts.length === 1) return words.includes(parts[0]);
+  for(let i = 0; i + parts.length <= words.length; i++){
+    if(parts.every((p, j) => words[i + j] === p)) return true;
+  }
+  return false;
+}
+
 function parseMessage(text){
   const raw = String(text || '');
   const lower = raw.toLowerCase();
@@ -46,16 +71,36 @@ function parseMessage(text){
   // Checked before the ON words, so "בלי בדיקות" is not read as asking for
   // them. Absent from the message means "leave it as it is", not "turn off" —
   // someone changing only their networks must not silently lose this.
-  const borderline = BORDERLINE_OFF_WORDS.some(w => lower.includes(w)) ? false
-    : (BORDERLINE_ON_WORDS.some(w => lower.includes(w)) ? true : null);
+  const borderline = BORDERLINE_OFF_WORDS.some(w => hasPhrase(words, w)) ? false
+    : (BORDERLINE_ON_WORDS.some(w => hasPhrase(words, w)) ? true : null);
 
+  // Network names stay forgiving on purpose: Hebrew glues prefixes onto them
+  // ("בפייסבוק", "ובאינסטגרם"), and someone writing that is unambiguously
+  // naming a network. The risk that made the keywords below dangerous does not
+  // apply — no ordinary Hebrew word happens to contain "פייסבוק".
   const found = ALL_NETWORKS.filter(network => {
     const { hebrew, latin } = NETWORK_KEYWORDS[network];
     return hebrew.some(k => lower.includes(k)) || latin.some(k => words.includes(k));
   });
   if(found.length) return { action: 'set', networks: found, borderline };
 
-  if(ALL_WORDS.some(w => lower.includes(w))){
+  // Whole words only, AND only in a short message.
+  //
+  // Whole-word matching alone still leaves "הכל" ambiguous: it is both the
+  // opt-in keyword we tell people to send and an ordinary Hebrew word ("זה
+  // הכל להיום"). Unlike a network name, which nobody writes by accident, this
+  // one appears in normal prose — and the case that caused real damage was a
+  // long broadcast message that merely happened to contain it.
+  //
+  // Someone joining sends "הכל", or "אני רוצה הכל". Nobody joins in a
+  // paragraph. Requiring a short message keeps every real opt-in working and
+  // takes the broadcast shape out of scope entirely.
+  //
+  // Erring strict is the right way round here: a missed opt-in gets the
+  // invitation message explaining how to join, and the person tries again. A
+  // false one signs someone up for alerts they never asked for, which is how
+  // a partner organisation's broadcast number ended up in the volunteer pool.
+  if(words.length <= ALL_WORDS_MAX_WORDS && ALL_WORDS.some(w => hasPhrase(words, w))){
     return { action: 'set', networks: [...DEFAULT_NETWORKS], borderline };
   }
 
