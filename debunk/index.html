@@ -173,6 +173,13 @@
   .verdict-btn.chosen{ background:var(--accent); border-color:var(--accent); color:var(--accent-ink); }
   .verdict-btn:disabled{ opacity:0.5; pointer-events:none; }
   .verdict-done{ margin:0; font-size:13.5px; color:#8aa097; }
+  /* A warning, not a blocker: readable and unmissable, but it does not take
+     over the card or disable anything. */
+  .unusable-note{
+    margin:0 0 10px; padding:9px 11px; border-radius:9px;
+    background:rgba(255,176,32,0.12); border:1px solid rgba(255,176,32,0.35);
+    color:#f0c26a; font-size:14px; line-height:1.45;
+  }
   .verdict-note-box{ display:flex; flex-direction:column; gap:7px; }
   .verdict-note-box[hidden]{ display:none; }
   .verdict-note-label{ font-size:13.5px; color:#d7c0ae; }
@@ -583,7 +590,7 @@ const els = {
   reportSend: document.getElementById('reportSend')
 };
 
-const PAGE = { claim: '', postSummary: '', postText: '', borderline: false, borderlineReason: '', mediaOnly: false, debunk: '', postUrl: null, sourceUrl: null, sourceShort: null, network: null };
+const PAGE = { claim: '', postSummary: '', postText: '', borderline: false, borderlineReason: '', mediaOnly: false, postUnusable: false, postUnusableReason: '', debunk: '', postUrl: null, sourceUrl: null, sourceShort: null, network: null };
 
 // Each recipient's link carries a variant index, so the people drawn for one
 // alert don't all post the identical sentence.
@@ -730,7 +737,10 @@ async function loadVariants(){
         postText: (fields.postText && fields.postText.stringValue) || '',
         // Why the server is unsure, and whether the post is video/image only.
         borderlineReason: (fields.borderlineReason && fields.borderlineReason.stringValue) || '',
-        mediaOnly: fields.mediaOnly && fields.mediaOnly.booleanValue === true
+        mediaOnly: fields.mediaOnly && fields.mediaOnly.booleanValue === true,
+        // An earlier reader already found this post impossible to reply to.
+        postUnusable: fields.postUnusable && fields.postUnusable.booleanValue === true,
+        postUnusableReason: (fields.postUnusableReason && fields.postUnusableReason.stringValue) || ''
       };
     }
     // Alerts generated before gendered variants existed.
@@ -907,6 +917,29 @@ function applyVerdictBlock(){
 // that is the question the system is unsure about, and the answer is what
 // improves it. Posting is still allowed afterwards, but it is no longer the
 // only thing the page asks for.
+// An earlier reader already reported that this post cannot be replied to —
+// it will not open, or it has replies switched off.
+//
+// Everyone drawn for an alert gets the same post, so without this each of them
+// discovers the wall separately: one post was reported replies_disabled by
+// four different volunteers, each of whom opened it, read the debunk and tried
+// to reply first. Telling the next reader up front costs them nothing and
+// saves the whole exercise.
+//
+// The debunk stays visible on purpose. The reader may still want to see what
+// was written, and the post may have been reopened since — so this informs
+// rather than forbids, and the button keeps working.
+function applyPostUnusable(){
+  if(!PAGE.postUnusable) return;
+  const why = PAGE.postUnusableReason === 'post_wont_open'
+    ? 'מתנדב/ת שקיבל/ה את ההתראה הזו לפניך דיווח/ה שהפוסט לא נפתח.'
+    : 'מתנדב/ת שקיבל/ה את ההתראה הזו לפניך דיווח/ה שהתגובות בפוסט סגורות.';
+  const note = document.createElement('p');
+  note.className = 'unusable-note';
+  note.textContent = '⚠️ ' + why + ' ייתכן שאין טעם לנסות — אבל אם השתנה מאז, נשמח שתעדכן/י.';
+  els.quoteText.parentNode.insertBefore(note, els.quoteText);
+}
+
 function applyBorderline(){
   if(!PAGE.borderline) return;
   document.title = 'Yoriki — פוסט שדורש בדיקה';
@@ -1329,6 +1362,8 @@ async function init(){
   PAGE.postText = loaded.postText || '';
   PAGE.borderlineReason = loaded.borderlineReason || '';
   PAGE.mediaOnly = loaded.mediaOnly === true;
+  PAGE.postUnusable = loaded.postUnusable === true;
+  PAGE.postUnusableReason = loaded.postUnusableReason || '';
   PAGE.network = networkFromUrl(PAGE.postUrl || '');
 
   const slot = Number.isInteger(variantIndex) && variantIndex >= 0 ? variantIndex : 0;
@@ -1357,6 +1392,7 @@ async function init(){
   renderSource();
   renderNetworkIcons();
   applyBorderline();
+  applyPostUnusable();
   watchQuoteScroll();
   refreshScrollHint();
   track('open');

@@ -22,6 +22,21 @@ app.use(express.text({ type: '*/*', limit: '4kb' }));
 
 const STATS = 'pwa-stats';
 const FEEDBACK = 'debunk-feedback';
+// Where the alert's wordings live. Flagging the alert as unusable belongs on
+// the same document the PWA already loads, so blocking costs the page no
+// extra read.
+const DEBUNK_VARIANTS = 'debunk-variants';
+
+// Reasons that describe the POST rather than our reply: the post will not
+// open, or it does not accept replies. They are facts about the target, not
+// judgements about the debunk, so one volunteer reporting one is enough —
+// nobody picks "replies are closed" by mistake.
+//
+// Everyone drawn for an alert gets the same post. Before this, each of them
+// discovered the wall separately: mFI1FVo6H63xld2qJcbb was reported
+// replies_disabled by FOUR different volunteers, each of whom had opened it,
+// read the debunk and tried to reply first. 17 of 77 reports were this.
+const POST_UNUSABLE_REASONS = new Set(['post_wont_open', 'replies_disabled']);
 // Set once the sheet exists and is shared with this service's account.
 const SHEET_ID = process.env.FEEDBACK_SHEET_ID || '';
 
@@ -239,6 +254,25 @@ app.post('/feedback', async (req, res) => {
       sourceUrl: context.sourceUrl || '',
       at: FieldValue.serverTimestamp(),
     });
+
+    // Spare everyone else the same dead end. Written to the alert document the
+    // PWA already loads, so the next volunteer is told up front instead of
+    // finding out the hard way.
+    const unusable = reasons.filter(r => POST_UNUSABLE_REASONS.has(r));
+    if(unusable.length){
+      try{
+        await db.collection(DEBUNK_VARIANTS).doc(String(messageId).slice(0, 200)).set({
+          postUnusable: true,
+          postUnusableReason: unusable[0],
+          postUnusableAt: FieldValue.serverTimestamp(),
+        }, { merge: true });
+        console.log(`post marked unusable (${unusable[0]}) for ${messageId}`);
+      }catch(e){
+        // A report that reaches the team is worth more than the flag; never
+        // let this cost us the report itself.
+        console.error(`could not flag ${messageId} as unusable:`, e.message);
+      }
+    }
 
     // Tell the fake-finding server what a human concluded, so it can mark its
     // own row true/false positive. Keyed by ITS request_id — our messageId is
