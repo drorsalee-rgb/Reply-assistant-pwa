@@ -24,6 +24,7 @@ const notify = require('./notify');
 const announce = require('./announce');
 const { shorten } = require('./shortLinks');
 const { checkFreshness } = require('./freshness');
+const { checkPostAlive } = require('./liveness');
 const { checkPrompts } = require('./promptWatch');
 const { DEFAULT_NETWORKS } = require('./preferences');
 
@@ -1126,6 +1127,41 @@ app.post('/api/broadcast-fake-hunting', async (req, res) => {
         age_days: Number(freshness.ageDays.toFixed(1)),
         limit_days: freshness.limit,
         borderline,
+        retryable: false
+      });
+    }
+
+    // The post may have been deleted between the fake-finding server seeing it
+    // and this alert going out. Volunteers reported exactly that seven times;
+    // five of the six still checkable returned 404. Each cost someone the
+    // whole exercise — open the link, find nothing, come back, report it.
+    //
+    // Checked here rather than at generation time because the gap is the
+    // point: a post alive an hour ago can be gone now, and this is the last
+    // moment before anyone is asked to act on it.
+    //
+    // Fails open in every direction — see liveness.js. Only a definite 404
+    // stops the alert.
+    const alive = await checkPostAlive(postUrl, rid);
+    if(alive.deleted){
+      // claim and debunk are parsed further down, so the alert names only what
+      // is already in scope here. Everything needed to find the post is: the
+      // ids, the URL, and the source. Moving the check later to get a fuller
+      // message would mean generating wordings for a post nobody can open.
+      const gone = { messageId: message_id, requestId: request_id, claim: '', debunk: '',
+                     postUrl, sourceUrl: message_link,
+                     // Derived here rather than reusing the `network` const,
+                     // which is declared further down for the recipient draw.
+                     network: networkFromUrl(postUrl) || networkFromUrl(message_link) };
+      await sendAlert(`deleted-post:${message_id}`,
+        `התקבלה התראה על פוסט שכבר נמחק (404) ולא נשלחה.\n\n${alertDetails(gone)}`,
+        rid, { title: 'התראה על פוסט מחוק נחסמה', footer: '' });
+      await notifyUpstream(`deleted-post:${message_id}`,
+        upstreamProblemMessage({ problem: 'The post no longer exists (404) — it was deleted between '
+          + 'your alert and ours going out. Nothing was sent.', ...gone }), rid);
+      return respond(422, {
+        error: 'The post no longer exists (404)',
+        reason: 'post_deleted',
         retryable: false
       });
     }
